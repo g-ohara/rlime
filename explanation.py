@@ -249,8 +249,9 @@ class Explanation(object):
 
         # this_dir, _ = os.path.split(__file__)
         this_dir, _ = os.path.split('__file__')
-        bundle = open(os.path.join(this_dir, 'drive/MyDrive/Programs/Lab/bundle.js'),
-                      encoding="utf8").read()
+        
+        bundle_path = os.path.join(this_dir, 'bundle.js')
+        bundle = open(bundle_path, encoding="utf8").read()
 
         out = u'''<html>
         <meta http-equiv="content-type" content="text/html; charset=UTF8">

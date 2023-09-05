@@ -6,6 +6,12 @@ import copy
 import sklearn
 import collections
 
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+from river import compose
+from river import linear_model
+from river import metrics
+from river import preprocessing 
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
 def matrix_subset(matrix, n_samples):
     if matrix.shape[0] == 0:
@@ -74,22 +80,44 @@ class AnchorBaseBeam(object):
         t = 1
 
         def update_bounds(t):
+
+            """ Update the confidence interval. 
+            Returns:
+                ut -- a tuple with the highest upper bound in 'not_J'
+                lt -- a tuple with the  lowest lower bound in 'J' """
+
+            # anchors sorted by their expected precision
             sorted_means = np.argsort(means)
+
             beta = AnchorBaseBeam.compute_beta(n_features, t, delta)
+            
+            # top_n anchors with highest expected precision
             J = sorted_means[-top_n:]
+
+            # anchors that is not in 'J'
             not_J = sorted_means[:-top_n]
+
+            # Calculate upper bounds of confidence intervals 
+            # for anchors with low expected precision
             for f in not_J:
                 ub[f] = AnchorBaseBeam.dup_bernoulli(means[f], beta /
                                                      n_samples[f])
+
+            # Calculate lower bounds of confidence intervals 
+            # for anchors with high expected precision.
             for f in J:
                 lb[f] = AnchorBaseBeam.dlow_bernoulli(means[f],
                                                       beta / n_samples[f])
             ut = not_J[np.argmax(ub[not_J])]
             lt = J[np.argmin(lb[J])]
             return ut, lt
+        ## end function
+
+        # Initializes the confidence interval.
         ut, lt = update_bounds(t)
         B = ub[ut] - lb[lt]
         verbose_count = 0
+        
         while B > epsilon:
             verbose_count += 1
             if verbose and verbose_count % verbose_every == 0:
@@ -105,11 +133,17 @@ class AnchorBaseBeam(object):
             positives[lt] += sample_fns[lt](batch_size)
             means[lt] = positives[lt] / n_samples[lt]
             t += 1
+
+            # Updates the confidence interval.
             ut, lt = update_bounds(t)
             B = ub[ut] - lb[lt]
+        ## end while
+
         sorted_means = np.argsort(means)
         return sorted_means[-top_n:]
+    ## end function
 
+    # GenerateCands
     @staticmethod
     def make_tuples(previous_best, state):
         # alters state, computes support for new tuples
@@ -162,11 +196,12 @@ class AnchorBaseBeam(object):
         return list(new_tuples)
 
     @staticmethod
-    def get_sample_fns(sample_fn, tuples, state):
+    def get_sample_fns(sample_fn, tuples, state, surrogate_models, update_model):
         # each sample fn returns number of positives
         sample_fns = []
-        def complete_sample_fn(t, n):
-            raw_data, data, labels = sample_fn(list(t), n)
+
+        def complete_sample_fn(t, model, n):
+            raw_data, data, labels = sample_fn(list(t), n, surrogate_model=model, update_model=update_model)
             current_idx = state['current_idx']
             # idxs = range(state['data'].shape[0], state['data'].shape[0] + n)
             idxs = range(current_idx, current_idx + n)
@@ -183,7 +218,8 @@ class AnchorBaseBeam(object):
             state['t_positives'][t] += labels.sum()
             state['data'][idxs] = data
             state['raw_data'][idxs] = raw_data
-            state['labels'][idxs] = labels
+            if len(labels) > 0:
+                state['labels'][idxs] = labels
             state['current_idx'] += n
             if state['current_idx'] >= state['data'].shape[0] - max(1000, n):
                 prealloc_size = state['prealloc_size']
@@ -203,10 +239,13 @@ class AnchorBaseBeam(object):
             # state['raw_data'] = np.vstack((state['raw_data'], raw_data))
             # state['labels'] = np.hstack((state['labels'], labels))
             return labels.sum()
-        for t in tuples:
-            sample_fns.append(lambda n, t=t: complete_sample_fn(t, n))
-        return sample_fns
+        ## end function
 
+        for t, model in zip(tuples, surrogate_models):
+            sample_fns.append(
+                    lambda n, t=t, model=model: complete_sample_fn(t, model, n))
+        return sample_fns
+    ## end function
 
     @staticmethod
     def get_initial_statistics(tuples, state):
@@ -260,21 +299,40 @@ class AnchorBaseBeam(object):
         anchor = {'feature': [], 'mean': [], 'precision': [],
                   'coverage': [], 'examples': [], 'all_precision': 0}
         _, coverage_data, _ = sample_fn([], coverage_samples, compute_labels=False)
+
+        # 最小個数だけサンプリング
         raw_data, data, labels = sample_fn([], max(1, min_samples_start))
-        mean = labels.mean()
+
+        # anchorの精度の期待値
+        if len(labels) > 0:
+            mean = np.mean(labels)
+        else:
+            mean = 0
+
         beta = np.log(1. / delta)
+
+        # anchorの精度の信頼下限
         lb = AnchorBaseBeam.dlow_bernoulli(mean, beta / data.shape[0])
+
         while mean > desired_confidence and lb < desired_confidence - epsilon:
+            # 新しくサンプリング
             nraw_data, ndata, nlabels = sample_fn([], batch_size)
+            # 新しいサンプルを結合
             data = np.vstack((data, ndata))
             raw_data = np.vstack((raw_data, nraw_data))
             labels = np.hstack((labels, nlabels))
+            # 精度の平均と信頼下限を更新
             mean = labels.mean()
             lb = AnchorBaseBeam.dlow_bernoulli(mean, beta / data.shape[0])
+        ##
+
+        # 信頼下限が制約を満たすならば終了
         if lb > desired_confidence:
             anchor['num_preds'] = data.shape[0]
             anchor['all_precision'] = mean
             return anchor
+
+        # メモリを確保してゼロ埋め
         prealloc_size = batch_size * 10000
         current_idx = data.shape[0]
         data = np.vstack((data, np.zeros((prealloc_size, data.shape[1]),
@@ -283,6 +341,7 @@ class AnchorBaseBeam(object):
             (raw_data, np.zeros((prealloc_size, raw_data.shape[1]),
                                 raw_data.dtype)))
         labels = np.hstack((labels, np.zeros(prealloc_size, labels.dtype)))
+
         n_features = data.shape[1]
         state = {'t_idx': collections.defaultdict(lambda: set()),
                  't_nsamples': collections.defaultdict(lambda: 0.),
@@ -302,29 +361,46 @@ class AnchorBaseBeam(object):
         best_of_size = {0: []}
         best_coverage = -1
         best_tuple = ()
+        best_model = None
         t = 1
         if max_anchor_size is None:
             max_anchor_size = n_features
+
+        # タプルのサイズが制約を満たす限り
         while current_size <= max_anchor_size:
+
+            # call 'GenerateCands'
             tuples = AnchorBaseBeam.make_tuples(
                 best_of_size[current_size - 1], state)
             tuples = [x for x in tuples
                       if state['t_coverage'][x] > best_coverage]
             if len(tuples) == 0:
                 break
-            sample_fns = AnchorBaseBeam.get_sample_fns(sample_fn, tuples,
-                                                       state)
+            surrogate_models = []
+            for i in range(len(tuples)):
+                preprocessor = preprocessing.StandardScaler()
+                model = linear_model.LogisticRegression()
+                pipeline = compose.Pipeline(preprocessor, model)
+                surrogate_models.append(pipeline)
+
+            sample_fns = AnchorBaseBeam.get_sample_fns(
+                    sample_fn, tuples, state, surrogate_models, True)
             initial_stats = AnchorBaseBeam.get_initial_statistics(tuples,
                                                                   state)
             # print tuples, beam_size
+
+            # call 'B-BestCands'
             chosen_tuples = AnchorBaseBeam.lucb(
                 sample_fns, initial_stats, epsilon, delta, batch_size,
-                min(beam_size, len(tuples)),
+                top_n=min(beam_size, len(tuples)),
                 verbose=verbose, verbose_every=verbose_every)
+
             best_of_size[current_size] = [tuples[x] for x in chosen_tuples]
             if verbose:
                 print('Best of size ', current_size, ':')
             # print state['data'].shape[0]
+
+            # 最良のタプルを探索
             stop_this = False
             for i, t in zip(chosen_tuples, best_of_size[current_size]):
                 # I can choose at most (beam_size - 1) tuples at each step,
@@ -365,9 +441,13 @@ class AnchorBaseBeam(object):
                         best_tuple = t
                         if best_coverage == 1 or stop_on_first:
                             stop_this = True
+            ## end for
+
             if stop_this:
                 break
             current_size += 1
+        ## end while
+
         if best_tuple == ():
             # Could not find an anchor, will now choose the highest precision
             # amongst the top K from every round
@@ -377,8 +457,16 @@ class AnchorBaseBeam(object):
             for i in range(0, current_size):
                 tuples.extend(best_of_size[i])
             # tuples = best_of_size[current_size - 1]
-            sample_fns = AnchorBaseBeam.get_sample_fns(sample_fn, tuples,
-                                                       state)
+
+            surrogate_models = []
+            for i in range(len(tuples)):
+                preprocessor = preprocessing.StandardScaler()
+                model = linear_model.LogisticRegression()
+                pipeline = compose.Pipeline(preprocessor, model)
+                surrogate_models.append(pipeline)
+
+            sample_fns = AnchorBaseBeam.get_sample_fns(
+                    sample_fn, tuples, state, surrogate_models, True)
             initial_stats = AnchorBaseBeam.get_initial_statistics(tuples,
                                                                   state)
             # print tuples, beam_size
@@ -387,4 +475,6 @@ class AnchorBaseBeam(object):
                 1, verbose=verbose)
             best_tuple = tuples[chosen_tuples[0]]
         # return best_tuple, state
-        return AnchorBaseBeam.get_anchor_from_tuple(best_tuple, state)
+        best_anchor = AnchorBaseBeam.get_anchor_from_tuple(best_tuple, state)
+        return best_anchor
+    ## end function
