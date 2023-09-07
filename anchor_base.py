@@ -74,6 +74,7 @@ class AnchorBaseBeam(object):
         for f in np.where(n_samples == 0)[0]:
             n_samples[f] += 1
             positives[f] += sample_fns[f](1)
+            
         if n_features == top_n:
             return range(n_features)
         means = positives / n_samples
@@ -196,12 +197,21 @@ class AnchorBaseBeam(object):
         return list(new_tuples)
 
     @staticmethod
-    def get_sample_fns(sample_fn, tuples, state, surrogate_models, update_model):
+    def get_sample_fns(
+            sample_fn, tuples, state, surrogate_models, update_model):
+        
         # each sample fn returns number of positives
         sample_fns = []
 
-        def complete_sample_fn(t, model, n):
-            raw_data, data, labels = sample_fn(list(t), n, surrogate_model=model, update_model=update_model)
+        def complete_sample_fn(t, n, model):
+            
+            # Take a sample satisfying the tuple t.
+            raw_data, data, labels = sample_fn(
+                    list(t),
+                    n, 
+                    surrogate_model=model,
+                    update_model=update_model)
+
             current_idx = state['current_idx']
             # idxs = range(state['data'].shape[0], state['data'].shape[0] + n)
             idxs = range(current_idx, current_idx + n)
@@ -241,9 +251,9 @@ class AnchorBaseBeam(object):
             return labels.sum()
         ## end function
 
-        for t, model in zip(tuples, surrogate_models):
+        for t, m in zip(tuples, surrogate_models):
             sample_fns.append(
-                    lambda n, t=t, model=model: complete_sample_fn(t, model, n))
+                    lambda n, t=t, model=m: complete_sample_fn(t, n, model))
         return sample_fns
     ## end function
 
@@ -366,42 +376,50 @@ class AnchorBaseBeam(object):
         if max_anchor_size is None:
             max_anchor_size = n_features
 
+        def init_surrogate_models(num_models):
+            models = []
+            for i in range(num_models):
+                preprocessor = preprocessing.StandardScaler()
+                model = linear_model.LogisticRegression()
+                pipeline = compose.Pipeline(preprocessor, model)
+                models.append(pipeline)
+            return models
+        ## end function
+
         # タプルのサイズが制約を満たす限り
         while current_size <= max_anchor_size:
 
-            # call 'GenerateCands'
+            # Call 'GenerateCands' and get INDEXes to the candidates.
             tuples = AnchorBaseBeam.make_tuples(
                 best_of_size[current_size - 1], state)
             tuples = [x for x in tuples
                       if state['t_coverage'][x] > best_coverage]
             if len(tuples) == 0:
                 break
-            surrogate_models = []
-            for i in range(len(tuples)):
-                preprocessor = preprocessing.StandardScaler()
-                model = linear_model.LogisticRegression()
-                pipeline = compose.Pipeline(preprocessor, model)
-                surrogate_models.append(pipeline)
 
+            surrogate_models = init_surrogate_models(len(tuples)) 
             sample_fns = AnchorBaseBeam.get_sample_fns(
                     sample_fn, tuples, state, surrogate_models, True)
             initial_stats = AnchorBaseBeam.get_initial_statistics(tuples,
                                                                   state)
             # print tuples, beam_size
 
-            # call 'B-BestCands'
+            # Call 'B-BestCands' and get INDEXes to the best candidates.
             chosen_tuples = AnchorBaseBeam.lucb(
                 sample_fns, initial_stats, epsilon, delta, batch_size,
                 top_n=min(beam_size, len(tuples)),
                 verbose=verbose, verbose_every=verbose_every)
 
+            # Get candidates from their indexes
             best_of_size[current_size] = [tuples[x] for x in chosen_tuples]
             if verbose:
                 print('Best of size ', current_size, ':')
             # print state['data'].shape[0]
 
-            # 最良のタプルを探索
             stop_this = False
+
+            # t --- a tuple in best candidates
+            # i --- an INDEX to the tuple t
             for i, t in zip(chosen_tuples, best_of_size[current_size]):
                 # I can choose at most (beam_size - 1) tuples at each step,
                 # and there are at most n_feature steps
@@ -411,6 +429,8 @@ class AnchorBaseBeam(object):
                 # if state['t_nsamples'][t] == 0:
                 #     mean = 1
                 # else:
+
+                # Update confidence interval and coverage of the tuple t.
                 mean = state['t_positives'][t] / state['t_nsamples'][t]
                 lb = AnchorBaseBeam.dlow_bernoulli(
                     mean, beta / state['t_nsamples'][t])
@@ -419,6 +439,9 @@ class AnchorBaseBeam(object):
                 coverage = state['t_coverage'][t]
                 if verbose:
                     print(i, mean, lb, ub)
+
+
+                # Judge whether the tuple t is an anchor or not.
                 while ((mean >= desired_confidence and
                        lb < desired_confidence - epsilon_stop) or
                        (mean < desired_confidence and
@@ -430,8 +453,11 @@ class AnchorBaseBeam(object):
                         mean, beta / state['t_nsamples'][t])
                     ub = AnchorBaseBeam.dup_bernoulli(
                         mean, beta / state['t_nsamples'][t])
+                ## end while
                 if verbose:
                     print('%s mean = %.2f lb = %.2f ub = %.2f coverage: %.2f n: %d' % (t, mean, lb, ub, coverage, state['t_nsamples'][t]))
+                # If the tuple t is the anchor with the provisionally best
+                # coverage, update 'best_tuple' and 'best_model'.
                 if mean >= desired_confidence and lb > desired_confidence - epsilon_stop:
                     if verbose:
                         print('Found eligible anchor ', t, 'Coverage:',
@@ -439,8 +465,10 @@ class AnchorBaseBeam(object):
                     if coverage > best_coverage:
                         best_coverage = coverage
                         best_tuple = t
+                        best_model = copy.deepcopy(surrogate_models[i])
                         if best_coverage == 1 or stop_on_first:
                             stop_this = True
+                ## end if
             ## end for
 
             if stop_this:
@@ -458,13 +486,7 @@ class AnchorBaseBeam(object):
                 tuples.extend(best_of_size[i])
             # tuples = best_of_size[current_size - 1]
 
-            surrogate_models = []
-            for i in range(len(tuples)):
-                preprocessor = preprocessing.StandardScaler()
-                model = linear_model.LogisticRegression()
-                pipeline = compose.Pipeline(preprocessor, model)
-                surrogate_models.append(pipeline)
-
+            surrogate_models = init_surrogate_models(len(tuples)) 
             sample_fns = AnchorBaseBeam.get_sample_fns(
                     sample_fn, tuples, state, surrogate_models, True)
             initial_stats = AnchorBaseBeam.get_initial_statistics(tuples,
@@ -474,7 +496,12 @@ class AnchorBaseBeam(object):
                 sample_fns, initial_stats, epsilon, delta, batch_size,
                 1, verbose=verbose)
             best_tuple = tuples[chosen_tuples[0]]
+            best_model = surrogate_models[chosen_tuples[0]]
+        ## end if
+
         # return best_tuple, state
+
         best_anchor = AnchorBaseBeam.get_anchor_from_tuple(best_tuple, state)
-        return best_anchor
+        print("202309080020")
+        return best_anchor, best_model
     ## end function

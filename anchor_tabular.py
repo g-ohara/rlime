@@ -291,7 +291,7 @@ class AnchorTabularExplainer(object):
         ## end function
 
         def my_sample_fn(
-                present, num_samples, compute_labels=True, surrogate_model=None, update_model=False):
+                present, num_samples, compute_labels=True, surrogate_model=None, update_model=True):
 
             conditions_eq = {}
             conditions_leq = {}
@@ -337,6 +337,7 @@ class AnchorTabularExplainer(object):
                     labels = (surrogate_model.predict_many(x) == y).astype(int)
                 if update_model:
                     surrogate_model.learn_many(x, y)
+            # print('Called sample_fn!')
             return raw_data, data, labels
         ## end function
 
@@ -364,19 +365,20 @@ class AnchorTabularExplainer(object):
         # return sample_fn, mapping
        
         # 説明を生成
-        exp = anchor_base.AnchorBaseBeam.anchor_beam(
+        exp, surrogate_model = anchor_base.AnchorBaseBeam.anchor_beam(
             sample_fn, 
             delta=delta, 
             epsilon=tau, 
             batch_size=batch_size,
             desired_confidence=threshold, 
             max_anchor_size=max_anchor_size,
+            verbose=False,
             **kwargs)
         self.add_names_to_exp(data_row, exp, mapping)
         exp['instance'] = data_row
         exp['prediction'] = classifier_fn(self.encoder_fn(data_row.reshape(1, -1)))[0]
         explanation = anchor_explanation.AnchorExplanation('tabular', exp, self.as_html)
-        return explanation
+        return explanation, surrogate_model
 
     def add_names_to_exp(self, data_row, hoeffding_exp, mapping):
         # TODO: precision recall is all wrong, coverage functions wont work
