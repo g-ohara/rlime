@@ -1,4 +1,4 @@
-import anchor_base
+import my_anchor_base
 import anchor_explanation
 import utils
 import lime
@@ -341,7 +341,7 @@ class AnchorTabularExplainer(object):
             return raw_data, data, labels
         ## end function
 
-        print("my_sample_fn")
+        # print("my_sample_fn")
         return my_sample_fn, mapping
 
     def explain_instance(
@@ -365,7 +365,7 @@ class AnchorTabularExplainer(object):
         # return sample_fn, mapping
        
         # 説明を生成
-        exp, surrogate_model = anchor_base.AnchorBaseBeam.anchor_beam(
+        exp, surrogate_model = my_anchor_base.AnchorBaseBeam.anchor_beam(
             sample_fn, 
             delta=delta, 
             epsilon=tau, 

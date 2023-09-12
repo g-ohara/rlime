@@ -386,7 +386,6 @@ class AnchorBaseBeam(object):
             return models
         ## end function
 
-        # タプルのサイズが制約を満たす限り
         while current_size <= max_anchor_size:
 
             # Call 'GenerateCands' and get INDEXes to the candidates.
@@ -502,6 +501,6 @@ class AnchorBaseBeam(object):
         # return best_tuple, state
 
         best_anchor = AnchorBaseBeam.get_anchor_from_tuple(best_tuple, state)
-        print("202309080020")
+        # print("202309080020")
         return best_anchor, best_model
     ## end function
