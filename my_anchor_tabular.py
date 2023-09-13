@@ -12,10 +12,10 @@ import string
 from io import open
 import json
 
-from creme import compose
-from creme import linear_model
-from creme import metrics
-from creme import preprocessing 
+from river import compose
+from river import linear_model
+from river import metrics
+from river import preprocessing 
 import pandas as pd
 
 def id_generator(size=15):
