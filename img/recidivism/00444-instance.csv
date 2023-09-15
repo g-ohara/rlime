@@ -1,0 +1,16 @@
+feature,value
+Race,1.0
+Alcohol,0.0
+Junky,0.0
+Supervised Release,1.0
+Married,0.0
+Felony,1.0
+WorkRelease,1.0
+Crime against Property,1.0
+Crime against Person,0.0
+Gender,1.0
+Priors,1.0
+YearsSchool,10.0
+PrisonViolations,1.0
+Age,22.0
+MonthsServed,33.0

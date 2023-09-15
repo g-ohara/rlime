@@ -1,0 +1,17 @@
+----------------------  --
+Race                     0
+Alcohol                  1
+Junky                    0
+Supervised Release       0
+Married                  0
+Felony                   1
+WorkRelease              1
+Crime against Property   1
+Crime against Person     0
+Gender                   1
+Priors                   3
+YearsSchool             10
+PrisonViolations         0
+Age                     44
+MonthsServed            54
+----------------------  --
