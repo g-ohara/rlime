@@ -1,0 +1,14 @@
+feature,value
+Age,21
+Workclass,4
+Education,11
+Marital Status,4
+Occupation,8
+Relationship,3
+Race,4
+Sex,1
+Capital Gain,0
+Capital Loss,0
+Hours per week,35
+Country,39
+Recidivism,No more crimes (0)

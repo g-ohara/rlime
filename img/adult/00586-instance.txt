@@ -1,0 +1,14 @@
+--------------  --
+Age             19
+Workclass        4
+Education       11
+Marital Status   4
+Occupation       1
+Relationship     3
+Race             4
+Sex              1
+Capital Gain     0
+Capital Loss     0
+Hours per week  40
+Country         39
+--------------  --

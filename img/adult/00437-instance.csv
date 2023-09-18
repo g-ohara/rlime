@@ -1,0 +1,14 @@
+feature,value
+Age,60
+Workclass,4
+Education,11
+Marital Status,2
+Occupation,8
+Relationship,0
+Race,4
+Sex,1
+Capital Gain,0
+Capital Loss,0
+Hours per week,40
+Country,39
+Recidivism,Re-arrested   (1)
