@@ -1,0 +1,17 @@
+----------------------  ---------
+Race                    Black (0)
+Alcohol                 Yes (1)
+Junky                   No (0)
+Supervised Release      No (0)
+Married                 No (0)
+Felony                  No (0)
+WorkRelease             No (0)
+Crime against Property  No (0)
+Crime against Person    Yes (1)
+Gender                  Male (1)
+Priors                  2
+YearsSchool             11
+PrisonViolations        0
+Age                     38
+MonthsServed            5
+----------------------  ---------

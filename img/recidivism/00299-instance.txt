@@ -1,17 +1,17 @@
-----------------------  --
-Race                     0
-Alcohol                  1
-Junky                    1
-Supervised Release       0
-Married                  0
-Felony                   0
-WorkRelease              1
-Crime against Property   0
-Crime against Person     0
-Gender                   1
-Priors                   1
+----------------------  ---------
+Race                    Black (0)
+Alcohol                 Yes (1)
+Junky                   Yes (1)
+Supervised Release      No (0)
+Married                 No (0)
+Felony                  No (0)
+WorkRelease             Yes (1)
+Crime against Property  No (0)
+Crime against Person    No (0)
+Gender                  Male (1)
+Priors                  1
 YearsSchool             11
-PrisonViolations         1
+PrisonViolations        1
 Age                     23
 MonthsServed            21
-----------------------  --
+----------------------  ---------

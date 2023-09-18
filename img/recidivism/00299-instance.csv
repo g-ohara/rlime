@@ -1,16 +1,17 @@
 feature,value
-Race,0.0
-Alcohol,1.0
-Junky,1.0
-Supervised Release,0.0
-Married,0.0
-Felony,0.0
-WorkRelease,1.0
-Crime against Property,0.0
-Crime against Person,0.0
-Gender,1.0
-Priors,1.0
-YearsSchool,11.0
-PrisonViolations,1.0
-Age,23.0
-MonthsServed,21.0
+Race,Black (0)
+Alcohol,Yes (1)
+Junky,Yes (1)
+Supervised Release,No (0)
+Married,No (0)
+Felony,No (0)
+WorkRelease,Yes (1)
+Crime against Property,No (0)
+Crime against Person,No (0)
+Gender,Male (1)
+Priors,1
+YearsSchool,11
+PrisonViolations,1
+Age,23
+MonthsServed,21
+Recidivism,Re-arrested   (1)
