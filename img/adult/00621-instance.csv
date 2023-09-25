@@ -1,0 +1,14 @@
+feature,value
+Age,Age > 48.00 (3)
+Workclass,State-gov (7)
+Education,Doctorate (10)
+Marital Status,Never-married (4)
+Occupation,Exec-managerial (4)
+Relationship,Not-in-family (1)
+Race,White (4)
+Sex,Female (0)
+Capital Gain,0
+Capital Loss,0
+Hours per week,40.00 < Hours per week <= 45.00 (1)
+Country,United-States (39)
+Income,>50K (1)

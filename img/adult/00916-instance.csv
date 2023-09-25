@@ -1,0 +1,14 @@
+feature,value
+Age,45
+Workclass,Local-gov (4)
+Education,1st-4th (11)
+Marital Status,Never-married (2)
+Occupation,Handlers-cleaners (6)
+Relationship,Wife (0)
+Race,Amer-Indian-Eskimo (2)
+Sex,Male (1)
+Capital Gain,1
+Capital Loss,0
+Hours per week,40
+Country,Hong (39)
+Income,More than 50K (1)

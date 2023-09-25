@@ -1,0 +1,16 @@
+feature,value
+Age,63
+Workclass, Local-gov
+fnlwgt, 28856
+Education, 7th-8th
+Education-Num, 4
+Marital Status, Married-civ-spouse
+Occupation, Other-service
+Relationship, Husband
+Race, White
+Sex, Male
+Capital Gain, 0
+Capital Loss, 0
+Hours per week, 55
+Country, United-States
+Income, <=50K

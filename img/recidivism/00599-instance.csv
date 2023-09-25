@@ -10,8 +10,8 @@ Crime against Property,No (0)
 Crime against Person,No (0)
 Gender,Male (1)
 Priors,2
-YearsSchool,8
+YearsSchool,YearsSchool <= 8.00 (0)
 PrisonViolations,2
-Age,24
-MonthsServed,16
+Age,21.00 < Age <= 26.00 (1)
+MonthsServed,9.00 < MonthsServed <= 24.00 (2)
 Recidivism,No more crimes (0)

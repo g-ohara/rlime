@@ -1,0 +1,14 @@
+feature,value
+Age,26
+Workclass,Local-gov (4)
+Education,1st-4th (11)
+Marital Status,Never-married (2)
+Occupation,Priv-house-serv (11)
+Relationship,Wife (0)
+Race,Black (4)
+Sex,Male (1)
+Capital Gain,0
+Capital Loss,0
+Hours per week,40
+Country,Hong (39)
+Income,Less than 50K (0)

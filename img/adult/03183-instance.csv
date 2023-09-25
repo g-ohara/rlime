@@ -1,0 +1,16 @@
+feature,value
+Age,40
+Workclass, Private
+fnlwgt, 291192
+Education, HS-grad
+Education-Num, 9
+Marital Status, Widowed
+Occupation, Sales
+Relationship, Not-in-family
+Race, White
+Sex, Female
+Capital Gain, 0
+Capital Loss, 0
+Hours per week, 40
+Country, United-States
+Income, <=50K
