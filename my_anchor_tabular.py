@@ -172,4 +172,7 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                 self.encoder_fn(data_row.reshape(1, -1)))[0]
         explanation = anchor_explanation.AnchorExplanation(
                 'tabular', exp, self.as_html)
+
+        # *********************************************************************
         return explanation, surrogate_model
+        # *********************************************************************
