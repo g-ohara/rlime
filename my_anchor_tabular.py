@@ -1,23 +1,25 @@
 import my_anchor_base
-import anchor_explanation
-import lime
-import lime.lime_tabular
-import collections
-import sklearn
-import numpy as np
-import os
-import copy
-import string
-from io import open
-import json
 
-from anchor import utils
 from anchor import anchor_tabular
-from river import compose
-from river import linear_model
-from river import metrics
-from river import preprocessing 
+from anchor import anchor_explanation
+
+import numpy as np
 import pandas as pd
+
+from river import compose
+
+from typing import Callable
+from typing import Type
+from typing import cast 
+from typing import Any 
+
+Predicate = tuple[int, str, int]
+Rule = dict[int, Predicate]
+Classifier = Callable[[np.ndarray], np.ndarray]
+Surrogate = Type[compose.Pipeline]
+SampleFn = Callable[
+        [list[int], int, bool, Surrogate | None, bool], 
+        tuple[np.ndarray, np.ndarray, np.ndarray]]
 
 class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
     """
@@ -27,22 +29,30 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         train_data: used to sample (bootstrap)
         categorical_names: map from integer to list of strings, names for each
             value of the categorical features. Every feature that is not in
-            this map will be considered as ordinal or continuous, and thus discretized.
+            this map will be considered as ordinal or continuous, and thus 
+            discretized.
     """
-    def get_sample_fn(self, data_row, classifier_fn, desired_label=None):
+    def get_sample_fn(
+            self, 
+            data_row        : np.ndarray,
+            classifier_fn   : Classifier,
+            desired_label   : int | None = None
+            ) -> tuple[
+                    SampleFn, 
+                    Rule]:
         
-        def predict_fn(x):
+        def predict_fn(x: np.ndarray) -> np.ndarray:
             return classifier_fn(self.encoder_fn(x))
         ##
 
-        true_label = desired_label
+        true_label: int | None = desired_label
         if true_label is None:
             # set true_label same as the label of data_row
             true_label = predict_fn(data_row.reshape(1, -1))[0]
 
         # must map present here to include categorical features 
         # (for conditions_eq), and numerical features for geq and leq
-        mapping = {}
+        mapping : Rule = {} 
 
         # 説明したいインスタンスを離散化
         data_row = self.disc.discretize(data_row.reshape(1, -1))[0]
@@ -75,15 +85,15 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         # 2. Changed the way to compute labels 
         # 
         def sample_fn(
-                present, 
-                num_samples, 
-                compute_labels=True,
-                surrogate_model=None,
-                update_model=True):
+                present         : list[int], 
+                num_samples     : int, 
+                compute_labels  : bool = True,
+                surrogate_model : Surrogate | None = None,
+                update_model    : bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
-            conditions_eq = {}
-            conditions_leq = {}
-            conditions_geq = {}
+            conditions_eq : dict[int, int] = {}
+            conditions_leq: dict[int, int] = {}
+            conditions_geq: dict[int, int] = {}
             for x in present:
                 f, op, v = mapping[x]
                 if op == 'eq':
@@ -120,12 +130,13 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             # *****************************************************************
             labels = np.array([])
             if surrogate_model != None:
-                x = pd.DataFrame(raw_data)
-                y = pd.Series(predict_fn(raw_data))
+                given_model: Surrogate = cast(Surrogate, surrogate_model)
+                data_x: pd.DataFrame = pd.DataFrame(raw_data)
+                data_y = pd.Series(predict_fn(raw_data))
                 if compute_labels:
-                    labels = (surrogate_model.predict_many(x) == y).astype(int)
+                    labels = (given_model.predict_many(data_x) == data_y).astype(int)
                 if update_model:
-                    surrogate_model.learn_many(x, y)
+                    given_model.learn_many(data_x, data_y)
             # *****************************************************************
 
             return raw_data, data, labels
@@ -135,16 +146,16 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
     def explain_instance(
             self, 
-            data_row, 
-            classifier_fn, 
-            threshold=0.95,
-            delta=0.1, 
-            tau=0.15, 
-            batch_size=100,
-            max_anchor_size=None,
-            desired_label=None,
-            beam_size=4, 
-            **kwargs):
+            data_row        : np.ndarray, 
+            classifier_fn   : Classifier, 
+            threshold       : float = 0.95,
+            delta           : float = 0.1, 
+            tau             : float = 0.15, 
+            batch_size      : int = 100,
+            max_anchor_size : int | None = None,
+            desired_label   : int | None = None,
+            beam_size       : int = 4, 
+            **kwargs        : Any) -> tuple[anchor_explanation.AnchorExplanation, Surrogate]:
         
         # サンプリングのための関数を取得
         # sample_fn --- 摂動サンプルとその擬似ラベルを返却する関数

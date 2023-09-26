@@ -1,216 +1,53 @@
 """Base anchor functions"""
 from __future__ import print_function
 import numpy as np
-import operator
 import copy
-import sklearn
 import collections
 
-# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+from anchor import anchor_base
 from river import compose
 from river import linear_model
-from river import metrics
 from river import preprocessing 
-# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
-def matrix_subset(matrix, n_samples):
-    if matrix.shape[0] == 0:
-        return matrix
-    n_samples = min(matrix.shape[0], n_samples)
-    return matrix[np.random.choice(matrix.shape[0], n_samples, replace=False)]
+from typing import Callable
+from typing import Type
+from typing import cast 
+from typing import Any 
 
+Predicate = tuple[int, str, int]
+Rule = list[Predicate]
+Classifier = Callable[[np.ndarray], np.ndarray]
+Surrogate = Type[compose.Pipeline]
+SampleFn = Callable[
+        [Rule, int, bool, Surrogate | None, bool], 
+        tuple[np.ndarray, np.ndarray, np.ndarray]]
 
-class AnchorBaseBeam(object):
-    def __init__(self):
-        pass
-
-    @staticmethod
-    def kl_bernoulli(p, q):
-        p = min(0.9999999999999999, max(0.0000001, p))
-        q = min(0.9999999999999999, max(0.0000001, q))
-        return (p * np.log(float(p) / q) + (1 - p) *
-                np.log(float(1 - p) / (1 - q)))
-
-    @staticmethod
-    def dup_bernoulli(p, level):
-        lm = p
-        um = min(min(1, p + np.sqrt(level / 2.)), 1)
-        qm = (um + lm) / 2.
-#         print 'lm', lm, 'qm', qm, kl_bernoulli(p, qm)
-        if AnchorBaseBeam.kl_bernoulli(p, qm) > level:
-            um = qm
-        else:
-            lm = qm
-        return um
-
-    @staticmethod
-    def dlow_bernoulli(p, level):
-        um = p
-        lm = max(min(1, p - np.sqrt(level / 2.)), 0)
-        qm = (um + lm) / 2.
-#         print 'lm', lm, 'qm', qm, kl_bernoulli(p, qm)
-        if AnchorBaseBeam.kl_bernoulli(p, qm) > level:
-            lm = qm
-        else:
-            um = qm
-        return lm
-
-    @staticmethod
-    def compute_beta(n_features, t, delta):
-        alpha = 1.1
-        k = 405.5
-        temp = np.log(k * n_features * (t ** alpha) / delta)
-        return temp + np.log(temp)
-
-    @staticmethod
-    def lucb(sample_fns, initial_stats, epsilon, delta, batch_size, top_n,
-             verbose=False, verbose_every=1):
-        # initial_stats must have n_samples, positive
-        n_features = len(sample_fns)
-        n_samples = np.array(initial_stats['n_samples'])
-        positives = np.array(initial_stats['positives'])
-        ub = np.zeros(n_samples.shape)
-        lb = np.zeros(n_samples.shape)
-        for f in np.where(n_samples == 0)[0]:
-            n_samples[f] += 1
-            positives[f] += sample_fns[f](1)
-            
-        if n_features == top_n:
-            return range(n_features)
-        means = positives / n_samples
-        t = 1
-
-        def update_bounds(t):
-
-            """ Update the confidence interval. 
-            Returns:
-                ut -- a tuple with the highest upper bound in 'not_J'
-                lt -- a tuple with the  lowest lower bound in 'J' """
-
-            # anchors sorted by their expected precision
-            sorted_means = np.argsort(means)
-
-            beta = AnchorBaseBeam.compute_beta(n_features, t, delta)
-            
-            # top_n anchors with highest expected precision
-            J = sorted_means[-top_n:]
-
-            # anchors that is not in 'J'
-            not_J = sorted_means[:-top_n]
-
-            # Calculate upper bounds of confidence intervals 
-            # for anchors with low expected precision
-            for f in not_J:
-                ub[f] = AnchorBaseBeam.dup_bernoulli(means[f], beta /
-                                                     n_samples[f])
-
-            # Calculate lower bounds of confidence intervals 
-            # for anchors with high expected precision.
-            for f in J:
-                lb[f] = AnchorBaseBeam.dlow_bernoulli(means[f],
-                                                      beta / n_samples[f])
-            ut = not_J[np.argmax(ub[not_J])]
-            lt = J[np.argmin(lb[J])]
-            return ut, lt
-        ## end function
-
-        # Initializes the confidence interval.
-        ut, lt = update_bounds(t)
-        B = ub[ut] - lb[lt]
-        verbose_count = 0
-        
-        while B > epsilon:
-            verbose_count += 1
-            if verbose and verbose_count % verbose_every == 0:
-                print('Best: %d (mean:%.10f, n: %d, lb:%.4f)' %
-                      (lt, means[lt], n_samples[lt], lb[lt]), end=' ')
-                print('Worst: %d (mean:%.4f, n: %d, ub:%.4f)' %
-                      (ut, means[ut], n_samples[ut], ub[ut]), end=' ')
-                print('B = %.2f' % B)
-            n_samples[ut] += batch_size
-            positives[ut] += sample_fns[ut](batch_size)
-            means[ut] = positives[ut] / n_samples[ut]
-            n_samples[lt] += batch_size
-            positives[lt] += sample_fns[lt](batch_size)
-            means[lt] = positives[lt] / n_samples[lt]
-            t += 1
-
-            # Updates the confidence interval.
-            ut, lt = update_bounds(t)
-            B = ub[ut] - lb[lt]
-        ## end while
-
-        sorted_means = np.argsort(means)
-        return sorted_means[-top_n:]
-    ## end function
-
-    # GenerateCands
-    @staticmethod
-    def make_tuples(previous_best, state):
-        # alters state, computes support for new tuples
-        normalize_tuple = lambda x: tuple(sorted(set(x)))  # noqa
-        all_features = range(state['n_features'])
-        coverage_data = state['coverage_data']
-        current_idx = state['current_idx']
-        data = state['data'][:current_idx]
-        labels = state['labels'][:current_idx]
-        if len(previous_best) == 0:
-            tuples = [(x, ) for x in all_features]
-            for x in tuples:
-                pres = data[:, x[0]].nonzero()[0]
-                # NEW
-                state['t_idx'][x] = set(pres)
-                state['t_nsamples'][x] = float(len(pres))
-                state['t_positives'][x] = float(labels[pres].sum())
-                state['t_order'][x].append(x[0])
-                # NEW
-                state['t_coverage_idx'][x] = set(
-                    coverage_data[:, x[0]].nonzero()[0])
-                state['t_coverage'][x] = (
-                    float(len(state['t_coverage_idx'][x])) /
-                    coverage_data.shape[0])
-            return tuples
-        new_tuples = set()
-        for f in all_features:
-            for t in previous_best:
-                new_t = normalize_tuple(t + (f, ))
-                if len(new_t) != len(t) + 1:
-                    continue
-                if new_t not in new_tuples:
-                    new_tuples.add(new_t)
-                    state['t_order'][new_t] = copy.deepcopy(state['t_order'][t])
-                    state['t_order'][new_t].append(f)
-                    state['t_coverage_idx'][new_t] = (
-                        state['t_coverage_idx'][t].intersection(
-                            state['t_coverage_idx'][(f,)]))
-                    state['t_coverage'][new_t] = (
-                        float(len(state['t_coverage_idx'][new_t])) /
-                        coverage_data.shape[0])
-                    t_idx = np.array(list(state['t_idx'][t]))
-                    t_data = state['data'][t_idx]
-                    present = np.where(t_data[:, f] == 1)[0]
-                    state['t_idx'][new_t] = set(t_idx[present])
-                    idx_list = list(state['t_idx'][new_t])
-                    state['t_nsamples'][new_t] = float(len(idx_list))
-                    state['t_positives'][new_t] = np.sum(
-                        state['labels'][idx_list])
-        return list(new_tuples)
-
+class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
     @staticmethod
     def get_sample_fns(
-            sample_fn, tuples, state, surrogate_models, update_model):
+            sample_fn       : SampleFn,
+            tuples          : Rule,
+            state,
+            surrogate_models: list[Surrogate],
+            update_model    : bool):
         
         # each sample fn returns number of positives
         sample_fns = []
 
-        def complete_sample_fn(t, n, model):
+        def complete_sample_fn(
+                t       : Predicate, 
+                n       : int, 
+                model   : Surrogate):
             
+            # *****************************************************************
             # Take a sample satisfying the tuple t.
             raw_data, data, labels = sample_fn(
                     list(t),
                     n, 
-                    surrogate_model=model,
-                    update_model=update_model)
+                    True,
+                    model,
+                    update_model)
+            # *****************************************************************
 
             current_idx = state['current_idx']
             # idxs = range(state['data'].shape[0], state['data'].shape[0] + n)
@@ -256,49 +93,6 @@ class AnchorBaseBeam(object):
                     lambda n, t=t, model=m: complete_sample_fn(t, n, model))
         return sample_fns
     ## end function
-
-    @staticmethod
-    def get_initial_statistics(tuples, state):
-        stats = {
-            'n_samples': [],
-            'positives': []
-        }
-        for t in tuples:
-            stats['n_samples'].append(state['t_nsamples'][t])
-            stats['positives'].append(state['t_positives'][t])
-        return stats
-
-    @staticmethod
-    def get_anchor_from_tuple(t, state):
-        # TODO: This is wrong, some of the intermediate anchors may not exist.
-        anchor = {'feature': [], 'mean': [], 'precision': [],
-                  'coverage': [], 'examples': [], 'all_precision': 0}
-        anchor['num_preds'] = state['data'].shape[0]
-        normalize_tuple = lambda x: tuple(sorted(set(x)))  # noqa
-        current_t = tuple()
-        for f in state['t_order'][t]:
-            current_t = normalize_tuple(current_t + (f,))
-
-            mean = (state['t_positives'][current_t] /
-                    state['t_nsamples'][current_t])
-            anchor['feature'].append(f)
-            anchor['mean'].append(mean)
-            anchor['precision'].append(mean)
-            anchor['coverage'].append(state['t_coverage'][current_t])
-            raw_idx = list(state['t_idx'][current_t])
-            raw_data = state['raw_data'][raw_idx]
-            covered_true = (
-                state['raw_data'][raw_idx][state['labels'][raw_idx] == 1])
-            covered_false = (
-                state['raw_data'][raw_idx][state['labels'][raw_idx] == 0])
-            exs = {}
-            exs['covered'] = matrix_subset(raw_data, 10)
-            exs['covered_true'] = matrix_subset(covered_true, 10)
-            exs['covered_false'] = matrix_subset(covered_false, 10)
-            exs['uncovered_true'] = np.array([])
-            exs['uncovered_false'] = np.array([])
-            anchor['examples'].append(exs)
-        return anchor
 
     @staticmethod
     def anchor_beam(sample_fn, delta=0.05, epsilon=0.1, batch_size=10,
@@ -501,6 +295,6 @@ class AnchorBaseBeam(object):
         # return best_tuple, state
 
         best_anchor = AnchorBaseBeam.get_anchor_from_tuple(best_tuple, state)
-        # print("202309080020")
+        print("202309261115")
         return best_anchor, best_model
     ## end function
