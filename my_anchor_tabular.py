@@ -18,7 +18,7 @@ Rule = dict[int, Predicate]
 Classifier = Callable[[np.ndarray], np.ndarray]
 Surrogate = Type[compose.Pipeline]
 SampleFn = Callable[
-        [list[int], int, bool, Surrogate | None, bool], 
+        [Rule, int, bool, Surrogate | None, bool], 
         tuple[np.ndarray, np.ndarray, np.ndarray]]
 
 class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
@@ -85,7 +85,7 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         # 2. Changed the way to compute labels 
         # 
         def sample_fn(
-                present         : list[int], 
+                present         : Rule, 
                 num_samples     : int, 
                 compute_labels  : bool = True,
                 surrogate_model : Surrogate | None = None,
