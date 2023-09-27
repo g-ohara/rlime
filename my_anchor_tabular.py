@@ -1,25 +1,16 @@
 import my_anchor_base
 
+from my_anchor_base import Anchor, Classifier, Rule, SampleFn, Predicate, Mapping
+
 from anchor import anchor_tabular
 from anchor import anchor_explanation
 
 import numpy as np
 import pandas as pd
 
-from river import compose
-
-from typing import Callable
-from typing import Type
 from typing import cast 
 from typing import Any 
-
-Predicate = tuple[int, str, int]
-Rule = dict[int, Predicate]
-Classifier = Callable[[np.ndarray], np.ndarray]
-Surrogate = Type[compose.Pipeline]
-SampleFn = Callable[
-        [Rule, int, bool, Surrogate | None, bool], 
-        tuple[np.ndarray, np.ndarray, np.ndarray]]
+from river import compose
 
 class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
     """
@@ -35,31 +26,20 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
     def get_sample_fn(
             self, 
             data_row        : np.ndarray,
-            classifier_fn   : Classifier,
-            desired_label   : int | None = None
-            ) -> tuple[
-                    SampleFn, 
-                    Rule]:
+            classifier_fn   : Classifier) -> tuple[SampleFn, Mapping]:
         
+        # Get predictions of the blackbox classifier
         def predict_fn(x: np.ndarray) -> np.ndarray:
             return classifier_fn(self.encoder_fn(x))
         ##
 
-        true_label: int | None = desired_label
-        if true_label is None:
-            # set true_label same as the label of data_row
-            true_label = predict_fn(data_row.reshape(1, -1))[0]
-
         # must map present here to include categorical features 
         # (for conditions_eq), and numerical features for geq and leq
-        mapping : Rule = {} 
+        mapping : Mapping = {} 
 
-        # 説明したいインスタンスを離散化
         data_row = self.disc.discretize(data_row.reshape(1, -1))[0]
 
-        # 任意のカテゴリカル特徴量 f について
         for f in self.categorical_features:
-            # f が順序特徴量ならば
             if f in self.ordinal_features:
                 for v in range(len(self.categorical_names[f])):
                     idx = len(mapping)
@@ -69,7 +49,6 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                     elif data_row[f] > v:
                         mapping[idx] = (f, 'geq', v)
                         # names[idx] = '%s > %s' % (self.feature_names[f], v)
-            # f が非順序特徴量ならば
             else:
                 idx = len(mapping)
                 mapping[idx] = (f, 'eq', data_row[f])
@@ -85,11 +64,12 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         # 2. Changed the way to compute labels 
         # 
         def sample_fn(
-                present         : Rule, 
+                present         : list[int], 
                 num_samples     : int, 
                 compute_labels  : bool = True,
-                surrogate_model : Surrogate | None = None,
-                update_model    : bool = True) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+                surrogate_model : compose.Pipeline | None = None,
+                update_model    : bool = True
+                ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
             conditions_eq : dict[int, int] = {}
             conditions_leq: dict[int, int] = {}
@@ -109,14 +89,15 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             # conditions_eq = dict([(x, data_row[x]) for x in present])
 
             # Sample new data points
-            raw_data = self.sample_from_train(
+            raw_data: np.ndarray = self.sample_from_train(
                 conditions_eq, {}, conditions_geq, conditions_leq, num_samples)
 
             # Descretize new data points
-            d_raw_data = self.disc.discretize(raw_data)
+            d_raw_data: np.ndarray = self.disc.discretize(raw_data)
 
             # Restore original representations for new data points
-            data = np.zeros((num_samples, len(mapping)), int)
+            data: np.ndarray = np.zeros((num_samples, len(mapping)), int)
+
             for i in mapping:
                 f, op, v = mapping[i]
                 if op == 'eq':
@@ -128,9 +109,9 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             # data = (raw_data == data_row).astype(int)
 
             # *****************************************************************
-            labels = np.array([])
+            labels: np.ndarray = np.array([])
             if surrogate_model != None:
-                given_model: Surrogate = cast(Surrogate, surrogate_model)
+                given_model: compose.Pipeline = cast(compose.Pipeline, surrogate_model)
                 data_x: pd.DataFrame = pd.DataFrame(raw_data)
                 data_y = pd.Series(predict_fn(raw_data))
                 if compute_labels:
@@ -150,18 +131,19 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             classifier_fn   : Classifier, 
             threshold       : float = 0.95,
             delta           : float = 0.1, 
-            tau             : float = 0.15, 
+            epsilon         : float = 0.15, 
             batch_size      : int = 100,
             max_anchor_size : int | None = None,
-            desired_label   : int | None = None,
-            beam_size       : int = 4, 
-            **kwargs        : Any) -> tuple[anchor_explanation.AnchorExplanation, Surrogate]:
+            beam_size       : int = 4,
+            verbose         : bool = False,
+            my_verbose      : bool = False,
+            **kwargs        : Any
+            ) -> tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None]:
         
         # サンプリングのための関数を取得
         # sample_fn --- 摂動サンプルとその擬似ラベルを返却する関数
         # It's possible to pass in max_anchor_size
-        sample_fn, mapping = self.get_sample_fn(
-            data_row, classifier_fn, desired_label=desired_label)
+        sample_fn, mapping = self.get_sample_fn(data_row, classifier_fn)
         # return sample_fn, mapping
 
         # *********************************************************************
@@ -169,11 +151,13 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         exp, surrogate_model = my_anchor_base.AnchorBaseBeam.anchor_beam(
             sample_fn, 
             delta=delta, 
-            epsilon=tau, 
+            epsilon=epsilon, 
             batch_size=batch_size,
             desired_confidence=threshold, 
             max_anchor_size=max_anchor_size,
-            verbose=False,
+            beam_size=beam_size,
+            verbose=verbose,
+            my_verbose=my_verbose,
             **kwargs)
         # *********************************************************************
         
