@@ -1,6 +1,6 @@
 import my_anchor_base
 
-from my_anchor_base import Anchor, Classifier, Rule, SampleFn, Predicate, Mapping
+from my_anchor_base import Classifier, SampleFn, Mapping
 
 from anchor import anchor_tabular
 from anchor import anchor_explanation

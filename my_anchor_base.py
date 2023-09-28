@@ -13,7 +13,7 @@ from typing import Callable
 from typing import Any 
 
 Predicate = tuple[int, str, int]
-Rule = list[Predicate]
+Rule = tuple[int, ...]
 Mapping = dict[int, Predicate]
 Classifier = Callable[[np.ndarray], np.ndarray]
 SampleFn = Callable[
@@ -26,7 +26,7 @@ Anchor = dict[str, Any]
 class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
     @staticmethod
     def complete_sample_fn(
-            t           : tuple[int], 
+            t           : Rule, 
             n           : int, 
             model       : compose.Pipeline,
             sample_fn   : SampleFn,
@@ -97,7 +97,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
     @staticmethod
     def get_sample_fns(
             sample_fn       : SampleFn,
-            tuples          : list[tuple[int, ...]],
+            tuples          : list[Rule],
             state           : State,
             surrogate_models: list[compose.Pipeline]
             ) -> list[CompleteSampleFn]:
@@ -115,7 +115,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
 
     @staticmethod
     def generate_cands(
-            previous_bests  : list[tuple[int, ...]],
+            previous_bests  : list[Rule],
             best_coverage   : float,
             state           : State,
             my_verbose      : bool) -> list[tuple[int, ...]]:
@@ -129,12 +129,13 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
 
     @staticmethod
     def b_best_cands(
-            tuples          : list[tuple[int, ...]],
+            tuples          : list[Rule],
             sample_fn       : SampleFn,
             beam_size       : int,
             epsilon         : float,
             delta           : float,
             batch_size      : int,
+            top_n           : int,
             state           : State,
             verbose         : bool,
             verbose_every   : int
@@ -151,85 +152,96 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                                                               state)
         # print tuples, beam_size
 
-        # Call 'B-BestCands' and get INDEXes to the best candidates.
         chosen_tuples = AnchorBaseBeam.lucb(
-            sample_fns, initial_stats, epsilon, delta, batch_size,
-            top_n=min(beam_size, len(tuples)),
-            verbose=verbose, verbose_every=verbose_every)
+            sample_fns, initial_stats, epsilon, delta, batch_size, top_n,
+            verbose, verbose_every)
 
         # Get candidates from their indexes
         return list(chosen_tuples), [tuples[x] for x in chosen_tuples], sample_fns, surrogate_models
     ##
+
+    @staticmethod
+    def update_confidence_bound(
+            rule        : tuple[int, ...],
+            batch_size  : int,
+            beta        : float,
+            state       : State) -> tuple[float, float, float]:
+
+        mean = state['t_positives'][rule] / state['t_nsamples'][rule]
+        lb = AnchorBaseBeam.dlow_bernoulli(
+            mean, beta / state['t_nsamples'][rule])
+        ub = AnchorBaseBeam.dup_bernoulli(
+            mean, beta / state['t_nsamples'][rule])
+
+        return mean, lb, ub
+    ##
             
+    @staticmethod
     def largest_valid_cand(
-            chosen_tuples: list[int], tuples, delta, beam_size, n_features):
+            chosen_tuples       : list[int], 
+            tuples              : list[tuple[int, ...]],
+            delta               : float,
+            beam_size           : int,
+            n_features          : int,
+            state               : State,
+            verbose             : bool,
+            desired_confidence  : float,
+            epsilon_stop        : float,
+            sample_fns          : list[CompleteSampleFn],
+            batch_size          : int,
+            surrogate_models    : list[compose.Pipeline],
+            stop_on_first       : bool,
+            ) -> tuple[tuple[int, ...], compose.Pipeline | None, float, bool]:
+
+        best_cand           : Rule 
+        best_cand_model     : compose.Pipeline | None
+        best_cand_coverage  : float
+
+        best_cand = ()
+        best_cand_model = None
+        best_cand_coverage = 0.0
+        stop_this = False
+
         # t --- a tuple in best candidates
         # i --- an INDEX to the tuple t
-        for i, t in list(
-                zip(chosen_tuples, tuples)):
+        for i, t in list(zip(chosen_tuples, tuples)):
+
             # I can choose at most (beam_size - 1) tuples at each step,
             # and there are at most n_feature steps
-            beta = np.log(1. /
-                          (delta / (1 + (beam_size - 1) * n_features)))
-            # beta = np.log(1. / delta)
-            # if state['t_nsamples'][t] == 0:
-            #     mean = 1
-            # else:
+            beta = np.log(1. / (delta / (1 + (beam_size - 1) * n_features)))
 
             # Update confidence interval and coverage of the tuple t.
-            mean = state['t_positives'][t] / state['t_nsamples'][t]
-            lb = AnchorBaseBeam.dlow_bernoulli(
-                mean, beta / state['t_nsamples'][t])
-            ub = AnchorBaseBeam.dup_bernoulli(
-                mean, beta / state['t_nsamples'][t])
+            mean, lb, ub = AnchorBaseBeam.update_confidence_bound(
+                    t, batch_size, beta, state)
             coverage = state['t_coverage'][t]
             if verbose:
                 print(i, mean, lb, ub)
-
 
             # Judge whether the tuple t is an anchor or not.
             while ((mean >= desired_confidence and
                    lb < desired_confidence - epsilon_stop) or
                    (mean < desired_confidence and
                     ub >= desired_confidence + epsilon_stop)):
-                # print mean, lb, state['t_nsamples'][t]
                 sample_fns[i](batch_size)
-                mean = state['t_positives'][t] / state['t_nsamples'][t]
-                lb = AnchorBaseBeam.dlow_bernoulli(
-                    mean, beta / state['t_nsamples'][t])
-                ub = AnchorBaseBeam.dup_bernoulli(
-                    mean, beta / state['t_nsamples'][t])
+                mean, lb, ub = AnchorBaseBeam.update_confidence_bound(
+                        t, batch_size, beta, state)
             ## end while
+
             if verbose:
                 print('%s mean = %.2f lb = %.2f ub = %.2f coverage: %.2f n: %d' % (t, mean, lb, ub, coverage, state['t_nsamples'][t]))
+
             # If the tuple t is the anchor with the provisionally best
             # coverage, update 'best_tuple' and 'best_model'.
             if mean >= desired_confidence and lb > desired_confidence - epsilon_stop:
-                if verbose:
-                    print('Found eligible anchor ', t, 'Coverage:',
-                          coverage, 'Is best?', coverage > best_coverage)
-                if my_verbose:
-                    print(
-                            'mean',
-                            mean,
-                            '>= desired_confidence',
-                            desired_confidence,
-                            'AND lb',
-                            lb,
-                            '>= desired_confidence',
-                            desired_confidence,
-                            '- epsilon',
-                            epsilon_stop)
-
-                if coverage > best_coverage:
-                    best_coverage = coverage
-                    best_tuple = t
-                    best_model = copy.deepcopy(surrogate_models[i])
-                    if best_coverage == 1 or stop_on_first:
+                if coverage > best_cand_coverage:
+                    best_cand_coverage = coverage
+                    best_cand = t
+                    best_cand_model = copy.deepcopy(surrogate_models[i])
+                    if best_cand_coverage == 1 or stop_on_first:
                         stop_this = True
             ## end if
         ## end for
-        return 
+        return best_cand, best_cand_model, best_cand_coverage, stop_this
     ## 
 
     @staticmethod
@@ -322,70 +334,135 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                  't_order': collections.defaultdict(lambda: list())
                  }
         current_size = 1
-        best_of_size: dict[int, list[tuple[int, ...]]] = {0: []}
-        best_coverage: float = -1.0
-        best_tuple: tuple[int, ...] = ()
-        best_model: compose.Pipeline | None = None
+
+
+        best_of_size: dict[int, list[Rule]] = {0: []}
+
+
+        # the rule with the highest coverage of the rules with higher
+        # precision than tau in the B best rules
+        best_tuple: Rule
+
+        # the surrogate model learned under best_tuple
+        best_model: compose.Pipeline | None
+
+        # coverage of best_tuple
+        best_coverage: float
+        
+        best_tuple = ()
+        best_model = None
+        best_coverage = -1.0
 
         if max_anchor_size is None:
             max_anchor_size = n_features
 
         while current_size <= max_anchor_size:
 
+            # newly generated candidate rules
+            cands: list[Rule]
+
             # Call 'GenerateCands' and get new candidate rules.
-            tuples: list[tuple[int, ...]] = AnchorBaseBeam.generate_cands(
+            cands = AnchorBaseBeam.generate_cands(
                     best_of_size[current_size - 1],
                     best_coverage,
                     state,
                     my_verbose)
 
-            if len(tuples) == 0:
+            if len(cands) == 0:
                 if my_verbose:
                     print('Cannot generate new candidate rules')
                 break
 
+            # -----------------------------------------------------------------
+
+            # list of indexes of the B best rules of candidate rules
+            chosen_tuples: list[int]
+
+            # list of the B best rules
+            # (thus it has the same length as chosen_tuples)
+            chosen_rules: list[Rule]
+
+            # list of methods to sample perturbed vectors under the each rule
+            # in the candidate rules 
+            # (thus it has the same length as cands)
+            sample_fns: list[CompleteSampleFn]
+            
+            # list of surrogate models learned under the each rule in the B
+            # best rules
+            # (thus it has the same length as cands)
+            surrogate_models: list[compose.Pipeline]
+
             # Call 'B-BestCands' and get the best B candidate rules.
-            chosen_tuples, best_of_size[current_size], sample_fns, surrogate_models = AnchorBaseBeam.b_best_cands(
-                    tuples,
-                    sample_fn,
-                    beam_size,
-                    epsilon,
-                    delta,
-                    batch_size,
-                    state,
-                    verbose,
-                    verbose_every)
+            chosen_tuples, chosen_rules, sample_fns, surrogate_models = AnchorBaseBeam.b_best_cands(
+                    cands, sample_fn, beam_size, epsilon, delta, batch_size,
+                    min(beam_size, len(cands)), state, verbose, verbose_every)
+
+            best_of_size[current_size] = chosen_rules
 
             if verbose:
                 print('Best of size ', current_size, ':')
-            # print state['data'].shape[0]
 
-            stop_this = False
+            # -----------------------------------------------------------------
+
+            # the rule with the highest coverage of the rules with higher
+            # precision than tau in the B best rules
+            best_cand: Rule
+    
+            # the surrogate model learned under best_tuple
+            best_cand_model: compose.Pipeline | None
+    
+            # coverage of best_tuple
+            best_cand_coverage: float
+        
+            # Call 'LargestValidCand' and get the candidate rule with the 
+            # highest coverage in the best B candidate rules
+            best_cand, best_cand_model, best_cand_coverage, stop_this = AnchorBaseBeam.largest_valid_cand(
+                    chosen_tuples, cands, delta, beam_size, n_features, state,
+                    verbose, desired_confidence, epsilon_stop, sample_fns,
+                    batch_size, surrogate_models, stop_on_first)
+
+            if best_cand_coverage > best_coverage:
+                best_tuple = copy.deepcopy(best_cand)
+                best_model = copy.deepcopy(best_cand_model)
+                best_coverage = best_cand_coverage
+
 
             if stop_this:
+                if my_verbose:
+                    print('Stop This!')
                 break
+            
+            # -----------------------------------------------------------------
+
+            # go to next iteration
             current_size += 1
+
         ## end while
+
 
         if best_tuple == ():
             # Could not find an anchor, will now choose the highest precision
             # amongst the top K from every round
             if verbose:
                 print('Could not find an anchor, now doing best of each size')
+
+            # list of the rules with the highest precision in each round
+            tuples: list[Rule]
             tuples = []
             for i in range(0, current_size):
                 tuples.extend(best_of_size[i])
-            # tuples = best_of_size[current_size - 1]
 
-            surrogate_models = AnchorBaseBeam.init_surrogate_models(len(tuples)) 
-            sample_fns = AnchorBaseBeam.get_sample_fns(
-                    sample_fn, tuples, state, surrogate_models)
-            initial_stats = AnchorBaseBeam.get_initial_statistics(tuples,
-                                                                  state)
-            # print tuples, beam_size
-            chosen_tuples = AnchorBaseBeam.lucb(
-                sample_fns, initial_stats, epsilon, delta, batch_size,
-                1, verbose=verbose)
+            chosen_tuples, _, sample_fns, surrogate_models = AnchorBaseBeam.b_best_cands(
+                    tuples,
+                    sample_fn,
+                    beam_size,
+                    epsilon,
+                    delta,
+                    batch_size,
+                    1,
+                    state,
+                    verbose,
+                    verbose_every)
             best_tuple = tuples[chosen_tuples[0]]
             best_model = surrogate_models[chosen_tuples[0]]
         ## end if
