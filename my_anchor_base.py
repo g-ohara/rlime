@@ -138,7 +138,11 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             state           : State,
             verbose         : bool,
             verbose_every   : int
-            ) -> tuple[list[int], list[tuple[int, ...]], list[CompleteSampleFn], list[compose.Pipeline]]:
+            ) -> tuple[
+                    list[int],
+                    list[tuple[int, ...]],
+                    list[CompleteSampleFn],
+                    list[compose.Pipeline]]:
 
         surrogate_models = AnchorBaseBeam.init_surrogate_models(len(tuples)) 
         sample_fns = AnchorBaseBeam.get_sample_fns(
@@ -155,7 +159,78 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
 
         # Get candidates from their indexes
         return list(chosen_tuples), [tuples[x] for x in chosen_tuples], sample_fns, surrogate_models
+    ##
             
+    def largest_valid_cand(
+            chosen_tuples: list[int], tuples, delta, beam_size, n_features):
+        # t --- a tuple in best candidates
+        # i --- an INDEX to the tuple t
+        for i, t in list(
+                zip(chosen_tuples, tuples)):
+            # I can choose at most (beam_size - 1) tuples at each step,
+            # and there are at most n_feature steps
+            beta = np.log(1. /
+                          (delta / (1 + (beam_size - 1) * n_features)))
+            # beta = np.log(1. / delta)
+            # if state['t_nsamples'][t] == 0:
+            #     mean = 1
+            # else:
+
+            # Update confidence interval and coverage of the tuple t.
+            mean = state['t_positives'][t] / state['t_nsamples'][t]
+            lb = AnchorBaseBeam.dlow_bernoulli(
+                mean, beta / state['t_nsamples'][t])
+            ub = AnchorBaseBeam.dup_bernoulli(
+                mean, beta / state['t_nsamples'][t])
+            coverage = state['t_coverage'][t]
+            if verbose:
+                print(i, mean, lb, ub)
+
+
+            # Judge whether the tuple t is an anchor or not.
+            while ((mean >= desired_confidence and
+                   lb < desired_confidence - epsilon_stop) or
+                   (mean < desired_confidence and
+                    ub >= desired_confidence + epsilon_stop)):
+                # print mean, lb, state['t_nsamples'][t]
+                sample_fns[i](batch_size)
+                mean = state['t_positives'][t] / state['t_nsamples'][t]
+                lb = AnchorBaseBeam.dlow_bernoulli(
+                    mean, beta / state['t_nsamples'][t])
+                ub = AnchorBaseBeam.dup_bernoulli(
+                    mean, beta / state['t_nsamples'][t])
+            ## end while
+            if verbose:
+                print('%s mean = %.2f lb = %.2f ub = %.2f coverage: %.2f n: %d' % (t, mean, lb, ub, coverage, state['t_nsamples'][t]))
+            # If the tuple t is the anchor with the provisionally best
+            # coverage, update 'best_tuple' and 'best_model'.
+            if mean >= desired_confidence and lb > desired_confidence - epsilon_stop:
+                if verbose:
+                    print('Found eligible anchor ', t, 'Coverage:',
+                          coverage, 'Is best?', coverage > best_coverage)
+                if my_verbose:
+                    print(
+                            'mean',
+                            mean,
+                            '>= desired_confidence',
+                            desired_confidence,
+                            'AND lb',
+                            lb,
+                            '>= desired_confidence',
+                            desired_confidence,
+                            '- epsilon',
+                            epsilon_stop)
+
+                if coverage > best_coverage:
+                    best_coverage = coverage
+                    best_tuple = t
+                    best_model = copy.deepcopy(surrogate_models[i])
+                    if best_coverage == 1 or stop_on_first:
+                        stop_this = True
+            ## end if
+        ## end for
+        return 
+    ## 
 
     @staticmethod
     def anchor_beam(
@@ -286,73 +361,6 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             # print state['data'].shape[0]
 
             stop_this = False
-
-            # t --- a tuple in best candidates
-            # i --- an INDEX to the tuple t
-            for i, t in list(
-                    zip(chosen_tuples, best_of_size[current_size])):
-                # I can choose at most (beam_size - 1) tuples at each step,
-                # and there are at most n_feature steps
-                beta = np.log(1. /
-                              (delta / (1 + (beam_size - 1) * n_features)))
-                # beta = np.log(1. / delta)
-                # if state['t_nsamples'][t] == 0:
-                #     mean = 1
-                # else:
-
-                # Update confidence interval and coverage of the tuple t.
-                mean = state['t_positives'][t] / state['t_nsamples'][t]
-                lb = AnchorBaseBeam.dlow_bernoulli(
-                    mean, beta / state['t_nsamples'][t])
-                ub = AnchorBaseBeam.dup_bernoulli(
-                    mean, beta / state['t_nsamples'][t])
-                coverage = state['t_coverage'][t]
-                if verbose:
-                    print(i, mean, lb, ub)
-
-
-                # Judge whether the tuple t is an anchor or not.
-                while ((mean >= desired_confidence and
-                       lb < desired_confidence - epsilon_stop) or
-                       (mean < desired_confidence and
-                        ub >= desired_confidence + epsilon_stop)):
-                    # print mean, lb, state['t_nsamples'][t]
-                    sample_fns[i](batch_size)
-                    mean = state['t_positives'][t] / state['t_nsamples'][t]
-                    lb = AnchorBaseBeam.dlow_bernoulli(
-                        mean, beta / state['t_nsamples'][t])
-                    ub = AnchorBaseBeam.dup_bernoulli(
-                        mean, beta / state['t_nsamples'][t])
-                ## end while
-                if verbose:
-                    print('%s mean = %.2f lb = %.2f ub = %.2f coverage: %.2f n: %d' % (t, mean, lb, ub, coverage, state['t_nsamples'][t]))
-                # If the tuple t is the anchor with the provisionally best
-                # coverage, update 'best_tuple' and 'best_model'.
-                if mean >= desired_confidence and lb > desired_confidence - epsilon_stop:
-                    if verbose:
-                        print('Found eligible anchor ', t, 'Coverage:',
-                              coverage, 'Is best?', coverage > best_coverage)
-                    if my_verbose:
-                        print(
-                                'mean',
-                                mean,
-                                '>= desired_confidence',
-                                desired_confidence,
-                                'AND lb',
-                                lb,
-                                '>= desired_confidence',
-                                desired_confidence,
-                                '- epsilon',
-                                epsilon_stop)
-
-                    if coverage > best_coverage:
-                        best_coverage = coverage
-                        best_tuple = t
-                        best_model = copy.deepcopy(surrogate_models[i])
-                        if best_coverage == 1 or stop_on_first:
-                            stop_this = True
-                ## end if
-            ## end for
 
             if stop_this:
                 break
