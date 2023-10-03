@@ -141,13 +141,17 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             verbose_every   : int
             ) -> tuple[
                     list[int],
-                    list[tuple[int, ...]],
+                    list[Rule],
                     list[CompleteSampleFn],
                     list[compose.Pipeline]]:
 
+        surrogate_models: list[compose.Pipeline]
         surrogate_models = AnchorBaseBeam.init_surrogate_models(len(tuples)) 
+
+        sample_fns: list[CompleteSampleFn]
         sample_fns = AnchorBaseBeam.get_sample_fns(
                 sample_fn, tuples, state, surrogate_models)
+
         initial_stats = AnchorBaseBeam.get_initial_statistics(tuples,
                                                               state)
         # print tuples, beam_size
@@ -162,7 +166,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
 
     @staticmethod
     def update_confidence_bound(
-            rule        : tuple[int, ...],
+            rule        : Rule,
             batch_size  : int,
             beta        : float,
             state       : State) -> tuple[float, float, float]:
@@ -179,7 +183,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
     @staticmethod
     def largest_valid_cand(
             chosen_tuples       : list[int], 
-            tuples              : list[tuple[int, ...]],
+            tuples              : list[Rule],
             delta               : float,
             beam_size           : int,
             n_features          : int,
@@ -191,11 +195,12 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             batch_size          : int,
             surrogate_models    : list[compose.Pipeline],
             stop_on_first       : bool,
-            ) -> tuple[tuple[int, ...], compose.Pipeline | None, float, bool]:
+            ) -> tuple[Rule, compose.Pipeline | None, float, bool]:
 
         best_cand           : Rule 
         best_cand_model     : compose.Pipeline | None
         best_cand_coverage  : float
+        stop_this           : bool
 
         best_cand = ()
         best_cand_model = None
@@ -226,9 +231,6 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                 mean, lb, ub = AnchorBaseBeam.update_confidence_bound(
                         t, batch_size, beta, state)
             ## end while
-
-            if verbose:
-                print('%s mean = %.2f lb = %.2f ub = %.2f coverage: %.2f n: %d' % (t, mean, lb, ub, coverage, state['t_nsamples'][t]))
 
             # If the tuple t is the anchor with the provisionally best
             # coverage, update 'best_tuple' and 'best_model'.
@@ -266,7 +268,6 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             
         beta = np.log(1. / delta)
 
-        # メモリを確保してゼロ埋め
         prealloc_size = batch_size * 10000
         current_idx = 0 
         data = np.zeros((prealloc_size, raw_data.shape[1]), coverage_data.dtype)
