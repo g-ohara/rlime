@@ -250,12 +250,10 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             delta               : float = 0.05,
             epsilon             : float = 0.1,
             batch_size          : int = 10,
-            min_shared_samples  : int = 0,
             desired_confidence  : float = 1.0,
             beam_size           : int = 1,
             verbose             : bool = False,
             epsilon_stop        : float = 0.05,
-            min_samples_start   : int = 0,
             max_anchor_size     : int | None = None,
             verbose_every       : int = 1,
             stop_on_first       : bool = False,
@@ -263,60 +261,17 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             my_verbose          : bool = False
             ) -> tuple[Anchor, compose.Pipeline | None]:
 
-        anchor: Anchor = {
-                'feature': [], 'mean': [], 'precision': [],
-                'coverage': [], 'examples': [], 'all_precision': 0}
-        _, coverage_data, _ = sample_fn(
+        raw_data, coverage_data, labels = sample_fn(
                 [], coverage_samples, False, None, True)
             
-
-        surrogate_models: list[compose.Pipeline] = AnchorBaseBeam.init_surrogate_models(1) 
-
-        # 最小個数だけサンプリング
-        raw_data, data, labels = sample_fn(
-                [], max(1, min_samples_start), True, surrogate_models[0], True)
-
-        # anchorの精度の期待値
-        if len(labels) > 0:
-            mean = np.mean(labels)
-        else:
-            mean = 0
-
         beta = np.log(1. / delta)
-
-        # anchorの精度の信頼下限
-        lb = AnchorBaseBeam.dlow_bernoulli(mean, beta / data.shape[0])
-
-        while mean > desired_confidence and lb < desired_confidence - epsilon:
-            # 新しくサンプリング
-            nraw_data, ndata, nlabels = sample_fn(
-                    [], batch_size, True, surrogate_models[0], True)
-            # 新しいサンプルを結合
-            data = np.vstack((data, ndata))
-            raw_data = np.vstack((raw_data, nraw_data))
-            labels = np.hstack((labels, nlabels))
-            # 精度の平均と信頼下限を更新
-            mean = labels.mean()
-            lb = AnchorBaseBeam.dlow_bernoulli(mean, beta / data.shape[0])
-        ##
-
-        # 信頼下限が制約を満たすならば終了
-        if lb > desired_confidence:
-            anchor['num_preds'] = data.shape[0]
-            anchor['all_precision'] = mean
-            if my_verbose:
-                print('lb (%f) > desired_confidence (%f)' % (lb, desired_confidence))
-            return anchor, surrogate_models[0]
 
         # メモリを確保してゼロ埋め
         prealloc_size = batch_size * 10000
-        current_idx = data.shape[0]
-        data = np.vstack((data, np.zeros((prealloc_size, data.shape[1]),
-                                         data.dtype)))
-        raw_data = np.vstack(
-            (raw_data, np.zeros((prealloc_size, raw_data.shape[1]),
-                                raw_data.dtype)))
-        labels = np.hstack((labels, np.zeros(prealloc_size, labels.dtype)))
+        current_idx = 0 
+        data = np.zeros((prealloc_size, raw_data.shape[1]), coverage_data.dtype)
+        raw_data = np.zeros((prealloc_size, raw_data.shape[1]), raw_data.dtype)
+        labels = np.zeros(prealloc_size, labels.dtype)
 
         n_features = data.shape[1]
         state: State = {'t_idx': collections.defaultdict(lambda: set()),
@@ -333,10 +288,9 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                  'coverage_data': coverage_data,
                  't_order': collections.defaultdict(lambda: list())
                  }
-        current_size = 1
 
-
-        best_of_size: dict[int, list[Rule]] = {0: []}
+        current_size = 0 
+        best_of_size: dict[int, list[Rule]] = {}
 
 
         # the rule with the highest coverage of the rules with higher
@@ -356,6 +310,9 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
         if max_anchor_size is None:
             max_anchor_size = n_features
 
+        prev_best_b_cands: list[Rule]
+        prev_best_b_cands = [] 
+
         while current_size <= max_anchor_size:
 
             # newly generated candidate rules
@@ -363,7 +320,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
 
             # Call 'GenerateCands' and get new candidate rules.
             cands = AnchorBaseBeam.generate_cands(
-                    best_of_size[current_size - 1],
+                    prev_best_b_cands,
                     best_coverage,
                     state,
                     my_verbose)
@@ -435,6 +392,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             # -----------------------------------------------------------------
 
             # go to next iteration
+            prev_best_b_cands = best_of_size[current_size]
             current_size += 1
 
         ## end while
@@ -471,6 +429,6 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
 
         best_anchor = AnchorBaseBeam.get_anchor_from_tuple(best_tuple, state)
         if my_verbose:
-            print("202309280023")
+            print("202310031631")
         return best_anchor, best_model
     ## end function
