@@ -23,6 +23,18 @@ CompleteSampleFn = Callable[[int], float]
 State = dict[str, Any]
 Anchor = dict[str, Any]
 
+class Arm:
+    def __init__(self, rule: Rule, sample_fn: SampleFn) -> None:
+        self.rule = rule
+        self.model = compose.Pipeline(
+                preprocessing.StandardScaler(),
+                linear_model.LogisticRegression())
+        self.sample_fn = sample_fn 
+
+    def get_reward(self, sample_num: int, state: State) -> float:
+        return AnchorBaseBeam.complete_sample_fn(
+                self.rule, sample_num, self.model, self.sample_fn, state)
+
 class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
     @staticmethod
     def complete_sample_fn(
@@ -117,14 +129,19 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
     def generate_cands(
             previous_bests  : list[Rule],
             best_coverage   : float,
-            state           : State,
-            my_verbose      : bool) -> list[tuple[int, ...]]:
+            state           : State) -> list[Rule]:
 
-        tuples: list[tuple[int, ...]]
-        tuples = AnchorBaseBeam.make_tuples(previous_bests, state)
-        tuples = [x for x in tuples
+        # list of the candidate rules generated from the previous B best rules
+        cands: list[Rule]
+        cands = AnchorBaseBeam.make_tuples(previous_bests, state)
+
+        # list of the candidate rules with higher coverage than that of the
+        # provisionally best rule already found
+        good_cands: list[Rule]
+        good_cands = [x for x in cands
                   if state['t_coverage'][x] > best_coverage]
-        return tuples
+
+        return good_cands
     ##
 
     @staticmethod
@@ -145,16 +162,22 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                     list[CompleteSampleFn],
                     list[compose.Pipeline]]:
 
+        # list of the surrogate models under each rule
+        # thus it has the same length as 'tuples'
         surrogate_models: list[compose.Pipeline]
+
+        # Initialize surrogate models
         surrogate_models = AnchorBaseBeam.init_surrogate_models(len(tuples)) 
 
+        # list of the functions to sample perturbed vectors under each rule
+        # thus it has the same length as 'tuples'
         sample_fns: list[CompleteSampleFn]
+
+        # Get sampling functions
         sample_fns = AnchorBaseBeam.get_sample_fns(
                 sample_fn, tuples, state, surrogate_models)
 
-        initial_stats = AnchorBaseBeam.get_initial_statistics(tuples,
-                                                              state)
-        # print tuples, beam_size
+        initial_stats = AnchorBaseBeam.get_initial_statistics(tuples, state)
 
         chosen_tuples = AnchorBaseBeam.lucb(
             sample_fns, initial_stats, epsilon, delta, batch_size, top_n,
@@ -321,11 +344,9 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
 
             # Call 'GenerateCands' and get new candidate rules.
             cands = AnchorBaseBeam.generate_cands(
-                    prev_best_b_cands,
-                    best_coverage,
-                    state,
-                    my_verbose)
+                    prev_best_b_cands, best_coverage, state)
 
+            # Exit if no candidate rules are generated
             if len(cands) == 0:
                 if my_verbose:
                     print('Cannot generate new candidate rules')
