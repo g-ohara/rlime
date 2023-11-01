@@ -1,6 +1,6 @@
-import my_anchor_base
+from typing import cast
+from typing import Any
 
-from my_anchor_base import Classifier, SampleFn, Mapping
 
 from anchor import anchor_tabular
 from anchor import anchor_explanation
@@ -8,9 +8,11 @@ from anchor import anchor_explanation
 import numpy as np
 import pandas as pd
 
-from typing import cast 
-from typing import Any 
 from river import compose
+
+import newlime_base
+from newlime_base import Classifier, SampleFn, Mapping
+
 
 class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
     """
@@ -20,22 +22,22 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         train_data: used to sample (bootstrap)
         categorical_names: map from integer to list of strings, names for each
             value of the categorical features. Every feature that is not in
-            this map will be considered as ordinal or continuous, and thus 
+            this map will be considered as ordinal or continuous, and thus
             discretized.
     """
+
     def get_sample_fn(
-            self, 
-            data_row        : np.ndarray,
-            classifier_fn   : Classifier) -> tuple[SampleFn, Mapping]:
-        
+        self, data_row: np.ndarray, classifier_fn: Classifier
+    ) -> tuple[SampleFn, Mapping]:
         # Get predictions of the blackbox classifier
         def predict_fn(x: np.ndarray) -> np.ndarray:
             return classifier_fn(self.encoder_fn(x))
+
         ##
 
-        # must map present here to include categorical features 
+        # must map present here to include categorical features
         # (for conditions_eq), and numerical features for geq and leq
-        mapping : Mapping = {} 
+        mapping: Mapping = {}
 
         data_row = self.disc.discretize(data_row.reshape(1, -1))[0]
 
@@ -44,14 +46,14 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                 for v in range(len(self.categorical_names[f])):
                     idx = len(mapping)
                     if data_row[f] <= v and v != len(self.categorical_names[f]) - 1:
-                        mapping[idx] = (f, 'leq', v)
+                        mapping[idx] = (f, "leq", v)
                         # names[idx] = '%s <= %s' % (self.feature_names[f], v)
                     elif data_row[f] > v:
-                        mapping[idx] = (f, 'geq', v)
+                        mapping[idx] = (f, "geq", v)
                         # names[idx] = '%s > %s' % (self.feature_names[f], v)
             else:
                 idx = len(mapping)
-                mapping[idx] = (f, 'eq', data_row[f])
+                mapping[idx] = (f, "eq", data_row[f])
             # names[idx] = '%s = %s' % (
             #     self.feature_names[f],
             #     self.categorical_names[f][int(data_row[f])])
@@ -59,30 +61,29 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
         # *********************************************************************
         # Modified Points
-        # 
+        #
         # 1. Added some arguments (surrogate_model, update_model)
-        # 2. Changed the way to compute labels 
-        # 
+        # 2. Changed the way to compute labels
+        #
         def sample_fn(
-                present         : list[int], 
-                num_samples     : int, 
-                compute_labels  : bool = True,
-                surrogate_model : compose.Pipeline | None = None,
-                update_model    : bool = True
-                ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-
-            conditions_eq : dict[int, int] = {}
+            present: list[int],
+            num_samples: int,
+            compute_labels: bool = True,
+            surrogate_model: compose.Pipeline | None = None,
+            update_model: bool = True,
+        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+            conditions_eq: dict[int, int] = {}
             conditions_leq: dict[int, int] = {}
             conditions_geq: dict[int, int] = {}
             for x in present:
                 f, op, v = mapping[x]
-                if op == 'eq':
+                if op == "eq":
                     conditions_eq[f] = v
-                if op == 'leq':
+                if op == "leq":
                     if f not in conditions_leq:
                         conditions_leq[f] = v
                     conditions_leq[f] = min(conditions_leq[f], v)
-                if op == 'geq':
+                if op == "geq":
                     if f not in conditions_geq:
                         conditions_geq[f] = v
                     conditions_geq[f] = max(conditions_geq[f], v)
@@ -90,7 +91,8 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
             # Sample new data points
             raw_data: np.ndarray = self.sample_from_train(
-                conditions_eq, {}, conditions_geq, conditions_leq, num_samples)
+                conditions_eq, {}, conditions_geq, conditions_leq, num_samples
+            )
 
             # Descretize new data points
             d_raw_data: np.ndarray = self.disc.discretize(raw_data)
@@ -100,17 +102,17 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
             for i in mapping:
                 f, op, v = mapping[i]
-                if op == 'eq':
+                if op == "eq":
                     data[:, i] = (d_raw_data[:, f] == data_row[f]).astype(int)
-                if op == 'leq':
+                if op == "leq":
                     data[:, i] = (d_raw_data[:, f] <= v).astype(int)
-                if op == 'geq':
+                if op == "geq":
                     data[:, i] = (d_raw_data[:, f] > v).astype(int)
             # data = (raw_data == data_row).astype(int)
 
             # *****************************************************************
             labels: np.ndarray = np.array([])
-            if surrogate_model != None:
+            if surrogate_model is not None:
                 given_model: compose.Pipeline = cast(compose.Pipeline, surrogate_model)
                 data_x: pd.DataFrame = pd.DataFrame(raw_data)
                 data_y = pd.Series(predict_fn(raw_data))
@@ -121,25 +123,25 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             # *****************************************************************
 
             return raw_data, data, labels
+
         ## end function
 
         return sample_fn, mapping
 
     def explain_instance(
-            self, 
-            data_row        : np.ndarray, 
-            classifier_fn   : Classifier, 
-            threshold       : float = 0.95,
-            delta           : float = 0.1, 
-            epsilon         : float = 0.15, 
-            batch_size      : int = 100,
-            max_anchor_size : int | None = None,
-            beam_size       : int = 4,
-            verbose         : bool = False,
-            my_verbose      : bool = False,
-            **kwargs        : Any
-            ) -> tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None]:
-        
+        self,
+        data_row: np.ndarray,
+        classifier_fn: Classifier,
+        threshold: float = 0.95,
+        delta: float = 0.1,
+        epsilon: float = 0.15,
+        batch_size: int = 100,
+        max_anchor_size: int | None = None,
+        beam_size: int = 4,
+        verbose: bool = False,
+        my_verbose: bool = False,
+        **kwargs: Any
+    ) -> tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None]:
         # サンプリングのための関数を取得
         # sample_fn --- 摂動サンプルとその擬似ラベルを返却する関数
         # It's possible to pass in max_anchor_size
@@ -148,25 +150,24 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
         # *********************************************************************
         # Generate Explanation
-        exp, surrogate_model = my_anchor_base.AnchorBaseBeam.anchor_beam(
-            sample_fn, 
-            delta=delta, 
-            epsilon=epsilon, 
+        exp, surrogate_model = newlime_base.AnchorBaseBeam.anchor_beam(
+            sample_fn,
+            delta=delta,
+            epsilon=epsilon,
             batch_size=batch_size,
-            desired_confidence=threshold, 
+            desired_confidence=threshold,
             max_anchor_size=max_anchor_size,
             beam_size=beam_size,
             verbose=verbose,
             my_verbose=my_verbose,
-            **kwargs)
+            **kwargs
+        )
         # *********************************************************************
-        
+
         self.add_names_to_exp(data_row, exp, mapping)
-        exp['instance'] = data_row
-        exp['prediction'] = classifier_fn(
-                self.encoder_fn(data_row.reshape(1, -1)))[0]
-        explanation = anchor_explanation.AnchorExplanation(
-                'tabular', exp, self.as_html)
+        exp["instance"] = data_row
+        exp["prediction"] = classifier_fn(self.encoder_fn(data_row.reshape(1, -1)))[0]
+        explanation = anchor_explanation.AnchorExplanation("tabular", exp, self.as_html)
 
         # *********************************************************************
         return explanation, surrogate_model
