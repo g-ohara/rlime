@@ -1,0 +1,12 @@
+services:
+  latex:
+    image: genjiohara/python
+    container_name: docker-python
+    volumes:
+      - ./:/root/workspace
+      - ~/:/root
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - DISPLAY=$DISPLAY
+    working_dir: /root/workspace
+    tty: true
