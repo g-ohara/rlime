@@ -1,17 +1,11 @@
-from typing import cast
-from typing import Any
-
-
-from anchor import anchor_tabular
-from anchor import anchor_explanation
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
-
+from anchor import anchor_explanation, anchor_tabular
 from river import compose
 
-import newlime_base
-from newlime_base import Classifier, SampleFn, Mapping
+from newlime_base import Classifier, Mapping, NewLimeBaseBeam, SampleFn
 
 
 class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
@@ -45,7 +39,10 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             if f in self.ordinal_features:
                 for v in range(len(self.categorical_names[f])):
                     idx = len(mapping)
-                    if data_row[f] <= v and v != len(self.categorical_names[f]) - 1:
+                    if (
+                        data_row[f] <= v
+                        and v != len(self.categorical_names[f]) - 1
+                    ):
                         mapping[idx] = (f, "leq", v)
                         # names[idx] = '%s <= %s' % (self.feature_names[f], v)
                     elif data_row[f] > v:
@@ -113,11 +110,15 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             # *****************************************************************
             labels: np.ndarray = np.array([])
             if surrogate_model is not None:
-                given_model: compose.Pipeline = cast(compose.Pipeline, surrogate_model)
+                given_model: compose.Pipeline = cast(
+                    compose.Pipeline, surrogate_model
+                )
                 data_x: pd.DataFrame = pd.DataFrame(raw_data)
                 data_y = pd.Series(predict_fn(raw_data))
                 if compute_labels:
-                    labels = (given_model.predict_many(data_x) == data_y).astype(int)
+                    labels = (
+                        given_model.predict_many(data_x) == data_y
+                    ).astype(int)
                 if update_model:
                     given_model.learn_many(data_x, data_y)
             # *****************************************************************
@@ -136,12 +137,14 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         delta: float = 0.1,
         epsilon: float = 0.15,
         batch_size: int = 100,
-        max_anchor_size: int | None = None,
         beam_size: int = 4,
         verbose: bool = False,
         my_verbose: bool = False,
         **kwargs: Any
-    ) -> tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None]:
+    ) -> (
+        tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None]
+        | None
+    ):
         # サンプリングのための関数を取得
         # sample_fn --- 摂動サンプルとその擬似ラベルを返却する関数
         # It's possible to pass in max_anchor_size
@@ -150,13 +153,12 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
         # *********************************************************************
         # Generate Explanation
-        exp, surrogate_model = newlime_base.NewLimeBaseBeam.anchor_beam(
+        result = NewLimeBaseBeam.anchor_beam(
             sample_fn,
             delta=delta,
             epsilon=epsilon,
             batch_size=batch_size,
             desired_confidence=threshold,
-            max_anchor_size=max_anchor_size,
             beam_size=beam_size,
             verbose=verbose,
             my_verbose=my_verbose,
@@ -164,11 +166,17 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         )
         # *********************************************************************
 
+        if result is None:
+            return None
+
+        exp, surrogate_model = result
         self.add_names_to_exp(data_row, exp, mapping)
         exp["instance"] = data_row
-        exp["prediction"] = classifier_fn(self.encoder_fn(data_row.reshape(1, -1)))[0]
-        explanation = anchor_explanation.AnchorExplanation("tabular", exp, self.as_html)
-
-        # *********************************************************************
+        exp["prediction"] = classifier_fn(
+            self.encoder_fn(data_row.reshape(1, -1))
+        )[0]
+        explanation = anchor_explanation.AnchorExplanation(
+            "tabular", exp, self.as_html
+        )
         return explanation, surrogate_model
-        # *********************************************************************
+    ##
