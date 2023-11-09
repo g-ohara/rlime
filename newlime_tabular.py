@@ -14,7 +14,7 @@ import newlime_base
 from newlime_base import Classifier, SampleFn, Mapping
 
 
-class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
+class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
     """
     Args:
         class_names: list of strings
@@ -57,7 +57,7 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             # names[idx] = '%s = %s' % (
             #     self.feature_names[f],
             #     self.categorical_names[f][int(data_row[f])])
-        ## end for
+        ##
 
         # *********************************************************************
         # Modified Points
@@ -124,7 +124,7 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
             return raw_data, data, labels
 
-        ## end function
+        ##
 
         return sample_fn, mapping
 
@@ -150,7 +150,7 @@ class AnchorTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
         # *********************************************************************
         # Generate Explanation
-        exp, surrogate_model = newlime_base.AnchorBaseBeam.anchor_beam(
+        exp, surrogate_model = newlime_base.NewLimeBaseBeam.anchor_beam(
             sample_fn,
             delta=delta,
             epsilon=epsilon,

@@ -1,4 +1,4 @@
-"""Base anchor functions"""
+"""Base functions"""
 
 from __future__ import print_function
 
@@ -36,12 +36,12 @@ class Arm:
         self.sample_fn = sample_fn
 
     def get_reward(self, sample_num: int, state: State) -> float:
-        return AnchorBaseBeam.complete_sample_fn(
+        return NewLimeBaseBeam.complete_sample_fn(
             self.rule, sample_num, self.model, self.sample_fn, state
         )
 
 
-class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
+class NewLimeBaseBeam(anchor_base.AnchorBaseBeam):
     @staticmethod
     def complete_sample_fn(
         t: Rule,
@@ -97,7 +97,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
         ret: float = labels.sum()
         return ret
 
-    ## end function
+    ##
 
     @staticmethod
     def init_surrogate_models(num_models: int) -> list[compose.Pipeline]:
@@ -123,14 +123,14 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
         sample_fns: list[CompleteSampleFn] = []
 
         for t, m in zip(tuples, surrogate_models):
-            fn = lambda n, t=t, m=m, fn=sample_fn, s=state: AnchorBaseBeam.complete_sample_fn(
+            fn = lambda n, t=t, m=m, fn=sample_fn, s=state: NewLimeBaseBeam.complete_sample_fn(
                 t, n, m, fn, s
             )
             sample_fns.append(fn)
 
         return sample_fns
 
-    ## end function
+    ##
 
     @staticmethod
     def generate_cands(
@@ -138,7 +138,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
     ) -> list[Rule]:
         # list of the candidate rules generated from the previous B best rules
         cands: list[Rule]
-        cands = AnchorBaseBeam.make_tuples(previous_bests, state)
+        cands = NewLimeBaseBeam.make_tuples(previous_bests, state)
 
         # list of the candidate rules with higher coverage than that of the
         # provisionally best rule already found
@@ -167,20 +167,20 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
         surrogate_models: list[compose.Pipeline]
 
         # Initialize surrogate models
-        surrogate_models = AnchorBaseBeam.init_surrogate_models(len(tuples))
+        surrogate_models = NewLimeBaseBeam.init_surrogate_models(len(tuples))
 
         # list of the functions to sample perturbed vectors under each rule
         # thus it has the same length as 'tuples'
         sample_fns: list[CompleteSampleFn]
 
         # Get sampling functions
-        sample_fns = AnchorBaseBeam.get_sample_fns(
+        sample_fns = NewLimeBaseBeam.get_sample_fns(
             sample_fn, tuples, state, surrogate_models
         )
 
-        initial_stats = AnchorBaseBeam.get_initial_statistics(tuples, state)
+        initial_stats = NewLimeBaseBeam.get_initial_statistics(tuples, state)
 
-        chosen_tuples = AnchorBaseBeam.lucb(
+        chosen_tuples = NewLimeBaseBeam.lucb(
             sample_fns,
             initial_stats,
             epsilon,
@@ -206,8 +206,8 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
         rule: Rule, batch_size: int, beta: float, state: State
     ) -> tuple[float, float, float]:
         mean = state["t_positives"][rule] / state["t_nsamples"][rule]
-        lb = AnchorBaseBeam.dlow_bernoulli(mean, beta / state["t_nsamples"][rule])
-        ub = AnchorBaseBeam.dup_bernoulli(mean, beta / state["t_nsamples"][rule])
+        lb = NewLimeBaseBeam.dlow_bernoulli(mean, beta / state["t_nsamples"][rule])
+        ub = NewLimeBaseBeam.dup_bernoulli(mean, beta / state["t_nsamples"][rule])
 
         return mean, lb, ub
 
@@ -247,7 +247,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             beta = np.log(1.0 / (delta / (1 + (beam_size - 1) * n_features)))
 
             # Update confidence interval and coverage of the tuple t.
-            mean, lb, ub = AnchorBaseBeam.update_confidence_bound(
+            mean, lb, ub = NewLimeBaseBeam.update_confidence_bound(
                 t, batch_size, beta, state
             )
             coverage = state["t_coverage"][t]
@@ -261,10 +261,10 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                 mean < desired_confidence and ub >= desired_confidence + epsilon_stop
             ):
                 sample_fns[i](batch_size)
-                mean, lb, ub = AnchorBaseBeam.update_confidence_bound(
+                mean, lb, ub = NewLimeBaseBeam.update_confidence_bound(
                     t, batch_size, beta, state
                 )
-            ## end while
+            ##
 
             # If the tuple t is the anchor with the provisionally best
             # coverage, update 'best_tuple' and 'best_model'.
@@ -275,8 +275,8 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                     best_cand_model = copy.deepcopy(surrogate_models[i])
                     if best_cand_coverage == 1 or stop_on_first:
                         stop_this = True
-            ## end if
-        ## end for
+            ##
+        ##
         return best_cand, best_cand_model, best_cand_coverage, stop_this
 
     ##
@@ -301,7 +301,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             [], coverage_samples, False, None, True
         )
 
-        beta = np.log(1.0 / delta)
+        # beta = np.log(1.0 / delta)
 
         prealloc_size = batch_size * 10000
         current_idx = 0
@@ -354,7 +354,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             cands: list[Rule]
 
             # Call 'GenerateCands' and get new candidate rules.
-            cands = AnchorBaseBeam.generate_cands(
+            cands = NewLimeBaseBeam.generate_cands(
                 prev_best_b_cands, best_coverage, state
             )
 
@@ -389,7 +389,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                 chosen_rules,
                 sample_fns,
                 surrogate_models,
-            ) = AnchorBaseBeam.b_best_cands(
+            ) = NewLimeBaseBeam.b_best_cands(
                 cands,
                 sample_fn,
                 beam_size,
@@ -426,7 +426,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                 best_cand_model,
                 best_cand_coverage,
                 stop_this,
-            ) = AnchorBaseBeam.largest_valid_cand(
+            ) = NewLimeBaseBeam.largest_valid_cand(
                 chosen_tuples,
                 cands,
                 delta,
@@ -457,8 +457,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             # go to next iteration
             prev_best_b_cands = best_of_size[current_size]
             current_size += 1
-
-        ## end while
+        ##
 
         if best_tuple == ():
             # Could not find an anchor, will now choose the highest precision
@@ -477,7 +476,7 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
                 _,
                 sample_fns,
                 surrogate_models,
-            ) = AnchorBaseBeam.b_best_cands(
+            ) = NewLimeBaseBeam.b_best_cands(
                 tuples,
                 sample_fn,
                 beam_size,
@@ -491,13 +490,12 @@ class AnchorBaseBeam(anchor_base.AnchorBaseBeam):
             )
             best_tuple = tuples[chosen_tuples[0]]
             best_model = surrogate_models[chosen_tuples[0]]
-        ## end if
+        ##
 
         # return best_tuple, state
 
-        best_anchor = AnchorBaseBeam.get_anchor_from_tuple(best_tuple, state)
+        best_anchor = NewLimeBaseBeam.get_anchor_from_tuple(best_tuple, state)
         if my_verbose:
             print("202310031631")
         return best_anchor, best_model
-
-    ## end function
+    ##
