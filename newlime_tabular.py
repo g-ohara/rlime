@@ -5,7 +5,7 @@ import pandas as pd
 from anchor import anchor_explanation, anchor_tabular
 from river import compose
 
-from newlime_base import Classifier, Mapping, NewLimeBaseBeam, SampleFn
+from newlime_base import Classifier, Mapping, NewLimeBaseBeam, Sample, SampleFn
 
 
 class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
@@ -50,7 +50,7 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                         # names[idx] = '%s > %s' % (self.feature_names[f], v)
             else:
                 idx = len(mapping)
-                mapping[idx] = (f, "eq", data_row[f])
+                mapping[idx] = (f, "eq", int(data_row[f]))
             # names[idx] = '%s = %s' % (
             #     self.feature_names[f],
             #     self.categorical_names[f][int(data_row[f])])
@@ -68,7 +68,7 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             compute_labels: bool = True,
             surrogate_model: compose.Pipeline | None = None,
             update_model: bool = True,
-        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        ) -> Sample:
             conditions_eq: dict[int, int] = {}
             conditions_leq: dict[int, int] = {}
             conditions_geq: dict[int, int] = {}
@@ -123,7 +123,7 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                     given_model.learn_many(data_x, data_y)
             # *****************************************************************
 
-            return raw_data, data, labels
+            return Sample(raw_data, data, labels)
 
         ##
 
@@ -179,4 +179,5 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             "tabular", exp, self.as_html
         )
         return explanation, surrogate_model
+
     ##
