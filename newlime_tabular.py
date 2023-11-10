@@ -5,7 +5,8 @@ import pandas as pd
 from anchor import anchor_explanation, anchor_tabular
 from river import compose
 
-from newlime_base import Classifier, Mapping, NewLimeBaseBeam, Sample, SampleFn
+from newlime_base import (Anchor, Classifier, Mapping, NewLimeBaseBeam, Sample,
+                          SampleFn)
 
 
 class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
@@ -153,7 +154,8 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
         # *********************************************************************
         # Generate Explanation
-        result = NewLimeBaseBeam.anchor_beam(
+        result: tuple[Anchor, compose.Pipeline | None] | None
+        result = NewLimeBaseBeam.beam_search(
             sample_fn,
             delta=delta,
             epsilon=epsilon,

@@ -60,7 +60,7 @@ class RuleClass:
 #         )
 
 
-class NewLimeBaseBeam(anchor_base.AnchorBaseBeam):
+class NewLimeBaseBeam:
     """This is a class for beam search of best anchor"""
 
     @staticmethod
@@ -191,7 +191,7 @@ class NewLimeBaseBeam(anchor_base.AnchorBaseBeam):
             return [()]
 
         cands: list[Rule]
-        cands = NewLimeBaseBeam.make_tuples(previous_bests, state)
+        cands = anchor_base.AnchorBaseBeam.make_tuples(previous_bests, state)
         return cands
 
     ##
@@ -226,12 +226,14 @@ class NewLimeBaseBeam(anchor_base.AnchorBaseBeam):
             sample_fn, cands, surrogate_models, state
         )
 
-        initial_stats = NewLimeBaseBeam.get_initial_statistics(cands, state)
+        initial_stats = anchor_base.AnchorBaseBeam.get_initial_statistics(
+            cands, state
+        )
 
         # list of the indexes to B candidate rules with the highest precision
         b_best_idxes: list[int]
         b_best_idxes = list(
-            NewLimeBaseBeam.lucb(
+            anchor_base.AnchorBaseBeam.lucb(
                 sample_fns,
                 initial_stats,
                 epsilon,
@@ -260,10 +262,10 @@ class NewLimeBaseBeam(anchor_base.AnchorBaseBeam):
         """Update confidence bound of the precision of the rule based on
         state"""
         mean = state["t_positives"][rule] / state["t_nsamples"][rule]
-        lb = NewLimeBaseBeam.dlow_bernoulli(
+        lb = anchor_base.AnchorBaseBeam.dlow_bernoulli(
             mean, beta / state["t_nsamples"][rule]
         )
-        ub = NewLimeBaseBeam.dup_bernoulli(
+        ub = anchor_base.AnchorBaseBeam.dup_bernoulli(
             mean, beta / state["t_nsamples"][rule]
         )
 
@@ -364,24 +366,25 @@ class NewLimeBaseBeam(anchor_base.AnchorBaseBeam):
 
         # dictionary of set of indexes to the samples generated under the rule
         t_idx: dict[Rule, set]
-        t_idx = collections.defaultdict(lambda: set())
+        t_idx = collections.defaultdict(set)
 
         # dictionary of the number of the samples generated under the rule
         t_nsamples: dict[Rule, int]
-        t_nsamples = collections.defaultdict(lambda: 0)
+        t_nsamples = collections.defaultdict(int)
 
         # dictionary of the number of the positive samples generated under the
         # rule
         t_positives: dict[Rule, int]
-        t_positives = collections.defaultdict(lambda: 0)
+        t_positives = collections.defaultdict(int)
 
-        # dictionary of set of indexes to the coverage samples generated under the rule
+        # dictionary of set of indexes to the coverage samples generated under
+        # the rule
         t_coverage_idx: dict[Rule, set]
-        t_coverage_idx = collections.defaultdict(lambda: set())
+        t_coverage_idx = collections.defaultdict(set)
 
         # dictionary of the coverages of the rules
         t_coverage: dict[Rule, float]
-        t_coverage = collections.defaultdict(lambda: 0.0)
+        t_coverage = collections.defaultdict(float)
 
         state = {
             "t_idx": t_idx,
@@ -396,14 +399,14 @@ class NewLimeBaseBeam(anchor_base.AnchorBaseBeam):
             "t_coverage_idx": t_coverage_idx,
             "t_coverage": t_coverage,
             "coverage_data": coverage_data,
-            "t_order": collections.defaultdict(lambda: []),
+            "t_order": collections.defaultdict(list),
         }
         return state
 
     ##
 
     @staticmethod
-    def anchor_beam(
+    def beam_search(
         sample_fn: SampleFn,
         delta: float = 0.05,
         epsilon: float = 0.1,
@@ -517,9 +520,10 @@ class NewLimeBaseBeam(anchor_base.AnchorBaseBeam):
         if best_rule is None:
             return None
 
-        best_anchor = NewLimeBaseBeam.get_anchor_from_tuple(
+        best_anchor = anchor_base.AnchorBaseBeam.get_anchor_from_tuple(
             best_rule.rule, state
         )
+        print(best_anchor["coverage"])
         return best_anchor, best_rule.model
 
     ##
