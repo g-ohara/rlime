@@ -91,7 +91,9 @@ class NewLimeBaseBeam:
         if len(sample.labels) > 0:
             state["labels"][idxs] = sample.labels
         state["current_idx"] += batch_size
-        if current_idx >= state["data"].shape[0] - max(1000, batch_size):
+        if state["current_idx"] >= state["data"].shape[0] - max(
+            1000, batch_size
+        ):
             prealloc_size = state["prealloc_size"]
             current_idx = sample.data.shape[0]
             state["data"] = np.vstack(
@@ -187,8 +189,8 @@ class NewLimeBaseBeam:
         """Return the list of the candidate rules generated from the previous B
         best ones"""
 
-        if not previous_bests:
-            return [()]
+        # if not previous_bests:
+        #     return [()]
 
         cands: list[Rule]
         cands = anchor_base.AnchorBaseBeam.make_tuples(previous_bests, state)
@@ -303,6 +305,7 @@ class NewLimeBaseBeam:
                 t, beta, state
             )
             coverage = state["t_coverage"][t]
+            print(coverage)
             if verbose:
                 print(i, mean, lb, ub)
 
@@ -438,7 +441,9 @@ class NewLimeBaseBeam:
         while current_size <= n_features:
             # Call 'GenerateCands' and get new candidate rules.
             cands: list[Rule]
-            cands = NewLimeBaseBeam.generate_cands(prev_best_b_cands, state)
+            cands = anchor_base.AnchorBaseBeam.make_tuples(
+                prev_best_b_cands, state
+            )
             print(cands)
             # -----------------------------------------------------------------
 
