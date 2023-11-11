@@ -150,7 +150,6 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         # sample_fn --- 摂動サンプルとその擬似ラベルを返却する関数
         # It's possible to pass in max_anchor_size
         sample_fn, mapping = self.get_sample_fn(data_row, classifier_fn)
-        # return sample_fn, mapping
 
         # *********************************************************************
         # Generate Explanation

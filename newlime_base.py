@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import numpy as np
-from anchor import anchor_base
+from anchor.anchor_base import AnchorBaseBeam
 from river import compose, linear_model, preprocessing
 
 Predicate = tuple[int, str, int]
@@ -133,6 +133,7 @@ class NewLimeBaseBeam:
         state: State,
     ) -> float:
         """Sample perturbed vectors, update state and returns the reward"""
+
         # *****************************************************************
         # Take a sample satisfying the tuple t.
         sample: Sample
@@ -185,18 +186,12 @@ class NewLimeBaseBeam:
     ##
 
     @staticmethod
-    def generate_cands(previous_bests: list[Rule], state: State) -> list[Rule]:
-        """Return the list of the candidate rules generated from the previous B
-        best ones"""
-
-        # if not previous_bests:
-        #     return [()]
-
-        cands: list[Rule]
-        cands = anchor_base.AnchorBaseBeam.make_tuples(previous_bests, state)
-        return cands
-
-    ##
+    def get_initial_statistics(tuples):
+        stats = {
+            "n_samples": np.zeros(len(tuples)),
+            "positives": np.zeros(len(tuples)),
+        }
+        return stats
 
     @staticmethod
     def b_best_cands(
@@ -228,14 +223,12 @@ class NewLimeBaseBeam:
             sample_fn, cands, surrogate_models, state
         )
 
-        initial_stats = anchor_base.AnchorBaseBeam.get_initial_statistics(
-            cands, state
-        )
+        initial_stats = NewLimeBaseBeam.get_initial_statistics(cands)
 
         # list of the indexes to B candidate rules with the highest precision
         b_best_idxes: list[int]
         b_best_idxes = list(
-            anchor_base.AnchorBaseBeam.lucb(
+            AnchorBaseBeam.lucb(
                 sample_fns,
                 initial_stats,
                 epsilon,
@@ -264,10 +257,10 @@ class NewLimeBaseBeam:
         """Update confidence bound of the precision of the rule based on
         state"""
         mean = state["t_positives"][rule] / state["t_nsamples"][rule]
-        lb = anchor_base.AnchorBaseBeam.dlow_bernoulli(
+        lb = AnchorBaseBeam.dlow_bernoulli(
             mean, beta / state["t_nsamples"][rule]
         )
-        ub = anchor_base.AnchorBaseBeam.dup_bernoulli(
+        ub = AnchorBaseBeam.dup_bernoulli(
             mean, beta / state["t_nsamples"][rule]
         )
 
@@ -305,9 +298,6 @@ class NewLimeBaseBeam:
                 t, beta, state
             )
             coverage = state["t_coverage"][t]
-            print(coverage)
-            if verbose:
-                print(i, mean, lb, ub)
 
             # Judge whether the tuple t is an anchor or not.
             while (
@@ -439,12 +429,10 @@ class NewLimeBaseBeam:
         best_of_size: dict[int, list[Rule]] = {}
 
         while current_size <= n_features:
+            # -----------------------------------------------------------------
             # Call 'GenerateCands' and get new candidate rules.
             cands: list[Rule]
-            cands = anchor_base.AnchorBaseBeam.make_tuples(
-                prev_best_b_cands, state
-            )
-            print(cands)
+            cands = AnchorBaseBeam.make_tuples(prev_best_b_cands, state)
             # -----------------------------------------------------------------
 
             # list of indexes of the B best rules of candidate rules
@@ -519,16 +507,12 @@ class NewLimeBaseBeam:
             current_size += 1
         ##
 
-        if my_verbose:
-            print("202310051450")
-
         if best_rule is None:
             return None
 
-        best_anchor = anchor_base.AnchorBaseBeam.get_anchor_from_tuple(
+        best_anchor = AnchorBaseBeam.get_anchor_from_tuple(
             best_rule.rule, state
         )
-        print(best_anchor["coverage"])
         return best_anchor, best_rule.model
 
     ##
