@@ -4,6 +4,7 @@
 """
 
 import random
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -88,6 +89,7 @@ def plot_weights(
     anchor: str | None = None,
     precision: float | None = None,
     coverage: float | None = None,
+    img_name: str | None = None,
 ) -> None:
     # pylint: disable=unused-argument
 
@@ -113,4 +115,5 @@ def plot_weights(
     for f, v in zip(sorted_features, sorted_values):
         plt.text(v, f, round(v, 5))
 
-    plt.show()
+    if img_name is not None:
+        plt.savefig(img_name, bbox_inches="tight")
