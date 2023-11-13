@@ -3,13 +3,14 @@
     NewLIME.
 """
 
+import random
 import matplotlib.pyplot as plt
 import numpy as np
 
 
 class Dataset:
     def __init__(self) -> None:
-        self.test: list[np.ndarray]
+        self.test: np.ndarray
         self.labels_test: list[np.ndarray]
         self.feature_names: list[str]
         self.categorical_names: list[list[str]]
@@ -48,8 +49,12 @@ def get_categorical_names(
 
 
 def get_trg_sample(
-    index: int, dataset: Dataset, dataset_name: str
+    index: int | None, dataset: Dataset, dataset_name: str
 ) -> tuple[np.ndarray, np.ndarray, list[tuple[str, str]]]:
+    """Get a sample randomly from test set"""
+
+    if index is None:
+        index = random.randint(10, dataset.test.shape[0])
     trg = dataset.test[index]
     label = dataset.labels_test[index]
 
