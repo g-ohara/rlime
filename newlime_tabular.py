@@ -1,12 +1,17 @@
-from typing import Any, cast
+"""NewLIME for tabular datasets"""
+
+import typing
 
 import numpy as np
 import pandas as pd
 from anchor import anchor_explanation, anchor_tabular
 from river import compose
 
-from newlime_base import (Anchor, Classifier, Mapping, NewLimeBaseBeam, Sample,
-                          SampleFn)
+import newlime_base
+from newlime_base import Anchor, Classifier, NewLimeBaseBeam, Sample, SampleFn
+
+Predicate = tuple[int, str, int]
+Mapping = dict[int, Predicate]
 
 
 class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
@@ -22,7 +27,10 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
     """
 
     def get_sample_fn(
-        self, data_row: np.ndarray, classifier_fn: Classifier
+        self,
+        data_row: np.ndarray,
+        classifier_fn: Classifier,
+        desired_label: int | None = None,
     ) -> tuple[SampleFn, Mapping]:
         # Get predictions of the blackbox classifier
         def predict_fn(x: np.ndarray) -> np.ndarray:
@@ -98,8 +106,8 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             # Restore original representations for new data points
             data: np.ndarray = np.zeros((num_samples, len(mapping)), int)
 
-            for i in mapping:
-                f, op, v = mapping[i]
+            for i, predicate in mapping.items():
+                f, op, v = predicate
                 if op == "eq":
                     data[:, i] = (d_raw_data[:, f] == data_row[f]).astype(int)
                 if op == "leq":
@@ -111,7 +119,7 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             # *****************************************************************
             labels: np.ndarray = np.array([])
             if surrogate_model is not None:
-                given_model: compose.Pipeline = cast(
+                given_model: compose.Pipeline = typing.cast(
                     compose.Pipeline, surrogate_model
                 )
                 data_x: pd.DataFrame = pd.DataFrame(raw_data)
@@ -139,32 +147,25 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         epsilon: float = 0.15,
         batch_size: int = 100,
         beam_size: int = 4,
-        verbose: bool = False,
-        my_verbose: bool = False,
-        **kwargs: Any
     ) -> (
         tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None]
         | None
     ):
-        # サンプリングのための関数を取得
-        # sample_fn --- 摂動サンプルとその擬似ラベルを返却する関数
         # It's possible to pass in max_anchor_size
         sample_fn, mapping = self.get_sample_fn(data_row, classifier_fn)
 
         # *********************************************************************
         # Generate Explanation
-        result: tuple[Anchor, compose.Pipeline | None] | None
-        result = NewLimeBaseBeam.beam_search(
-            sample_fn,
+        hyper_param = newlime_base.HyperParam(
             delta=delta,
             epsilon=epsilon,
             batch_size=batch_size,
             desired_confidence=threshold,
             beam_size=beam_size,
-            verbose=verbose,
-            my_verbose=my_verbose,
-            **kwargs
         )
+
+        result: tuple[Anchor, compose.Pipeline | None] | None
+        result = NewLimeBaseBeam.beam_search(sample_fn, hyper_param)
         # *********************************************************************
 
         if result is None:

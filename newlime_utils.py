@@ -4,18 +4,36 @@
 """
 
 import random
+import typing
 
+import anchor.utils
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-class Dataset:
+class Dataset(anchor.utils.Bunch):
     def __init__(self) -> None:
+        super(Dataset, self).__init__({})
+        self.train: np.ndarray
         self.test: np.ndarray
+        self.labels_train: np.ndarray
         self.labels_test: list[np.ndarray]
         self.feature_names: list[str]
         self.categorical_names: list[list[str]]
         self.class_target: str
+        self.class_names: list[str]
+
+
+def load_dataset(dataset_name: str, dataset_folder: str) -> Dataset:
+    """Download balanced and descretized dataset"""
+
+    bunch = anchor.utils.load_dataset(
+        dataset_name=dataset_name,
+        dataset_folder=dataset_folder,
+        balance=True,
+        discretize=True,
+    )
+    return typing.cast(Dataset, bunch)
 
 
 transformations = {
@@ -50,12 +68,15 @@ def get_categorical_names(
 
 
 def get_trg_sample(
-    index: int | None, dataset: Dataset, dataset_name: str
+    index: int | None, bunch: anchor.utils.Bunch, dataset_name: str
 ) -> tuple[np.ndarray, np.ndarray, list[tuple[str, str]]]:
     """Get a sample randomly from test set"""
 
+    dataset = typing.cast(Dataset, bunch)
+
     if index is None:
         index = random.randint(10, dataset.test.shape[0])
+
     trg = dataset.test[index]
     label = dataset.labels_test[index]
 
@@ -86,7 +107,7 @@ def get_trg_sample(
 def plot_weights(
     weights: list[float],
     feature_names: list[str],
-    anchor: str | None = None,
+    anchor_str: str | None = None,
     precision: float | None = None,
     coverage: float | None = None,
     img_name: str | None = None,
@@ -106,9 +127,9 @@ def plot_weights(
     ]
     plt.barh(sorted_features, sorted_values, color=color)
 
-    if anchor is not None:
+    if anchor_str is not None:
         plt.title(
-            f"{anchor}\n"
+            f"{anchor_str}\n"
             f"with Precision {precision:.3f} and Coverage {coverage:.3f}"
         )
 
