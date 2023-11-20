@@ -138,3 +138,5 @@ def plot_weights(
 
     if img_name is not None:
         plt.savefig(img_name, bbox_inches="tight")
+
+    plt.close()
