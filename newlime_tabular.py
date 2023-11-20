@@ -7,8 +7,8 @@ import pandas as pd
 from anchor import anchor_explanation, anchor_tabular
 from river import compose
 
-import newlime_base
-from newlime_base import Anchor, Classifier, NewLimeBaseBeam, Sample, SampleFn
+from . import newlime_base
+from .newlime_base import Anchor, Classifier, NewLimeBaseBeam, Sample, SampleFn
 
 Predicate = tuple[int, str, int]
 Mapping = dict[int, Predicate]
