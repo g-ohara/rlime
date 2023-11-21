@@ -28,15 +28,16 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
     def get_sample_fn(
         self,
-        data_row: np.ndarray,
+        data_row: np.ndarray,  # target instance
         classifier_fn: Classifier,
         desired_label: int | None = None,
     ) -> tuple[SampleFn, Mapping]:
+        """Return sampling function that gets sample from neighborhood of
+        target instance. The function returns ......"""
+
         # Get predictions of the blackbox classifier
         def predict_fn(x: np.ndarray) -> np.ndarray:
             return classifier_fn(self.encoder_fn(x))
-
-        ##
 
         # must map present here to include categorical features
         # (for conditions_eq), and numerical features for geq and leq
@@ -72,16 +73,25 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         # 2. Changed the way to compute labels
         #
         def sample_fn(
-            present: list[int],
+            present: newlime_base.Rule,
             num_samples: int,
             compute_labels: bool = True,
             surrogate_model: compose.Pipeline | None = None,
             update_model: bool = True,
         ) -> Sample:
+            """Get sample satisfying given rule and its label predicted by
+            the surrogate model, then update the surrogate model for the sample
+            """
+
             conditions_eq: dict[int, int] = {}
             conditions_leq: dict[int, int] = {}
             conditions_geq: dict[int, int] = {}
+
+            x: int  # a predicate index in given rule
             for x in present:
+                f: int  # feature index (f == x ??)
+                op: str  # comparison operator
+                v: int  # standard value
                 f, op, v = mapping[x]
                 if op == "eq":
                     conditions_eq[f] = v
@@ -147,6 +157,7 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         epsilon: float = 0.15,
         batch_size: int = 100,
         beam_size: int = 4,
+        max_rule_length: int | None = None,
     ) -> (
         tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None]
         | None
@@ -162,6 +173,7 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             batch_size=batch_size,
             desired_confidence=threshold,
             beam_size=beam_size,
+            max_rule_length=max_rule_length,
         )
 
         result: tuple[Anchor, compose.Pipeline | None] | None

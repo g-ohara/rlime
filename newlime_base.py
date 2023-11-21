@@ -25,9 +25,7 @@ class Sample:
     labels: np.ndarray
 
 
-SampleFn = Callable[
-    [list[int], int, bool, compose.Pipeline | None, bool], Sample
-]
+SampleFn = Callable[[Rule, int, bool, compose.Pipeline | None, bool], Sample]
 CompleteSampleFn = Callable[[int], float]
 State = dict[str, Any]
 Anchor = dict[str, Any]
@@ -45,7 +43,7 @@ class RuleClass:
 
 
 @dataclasses.dataclass
-class HyperParam:
+class HyperParam:  # pylint: disable=too-many-instance-attributes
     """Hyper parameters for beam search"""
 
     delta: float = 0.05
@@ -55,6 +53,7 @@ class HyperParam:
     batch_size: int = 10
     desired_confidence: float = 1.0
     coverage_samples_num: int = 10000
+    max_rule_length: int | None = None
 
 
 # class Arm:
@@ -148,7 +147,7 @@ class NewLimeBaseBeam:
         # *****************************************************************
         # Take a sample satisfying the tuple t.
         sample: Sample
-        sample = sample_fn(list(rule), n, True, model, True)
+        sample = sample_fn(rule, n, True, model, True)
         # *****************************************************************
 
         NewLimeBaseBeam.update_state(state, rule, n, sample)
@@ -188,12 +187,17 @@ class NewLimeBaseBeam:
                 NewLimeBaseBeam.complete_sample_fn,
                 sample_fn=sample_fn,
             )
-            #     rule=rule,
-            #     model=model,
-            #     state=state,
-            fn = lambda n, rule=rule, model=model, state=state: partial_fn(
-                n=n, rule=rule, model=model, state=state
-            )
+
+            def fn(
+                n: int,
+                rule: Rule = rule,
+                model: compose.Pipeline = model,
+                state: State = state,
+            ) -> float:
+                return partial_fn(  # pylint: disable=cell-var-from-loop
+                    n=n, rule=rule, model=model, state=state
+                )
+
             sample_fns.append(fn)
 
         return sample_fns
@@ -357,7 +361,7 @@ class NewLimeBaseBeam:
 
         sample: Sample
         sample = sample_fn(
-            [], hyper_param.coverage_samples_num, False, None, True
+            (), hyper_param.coverage_samples_num, False, None, True
         )
 
         # data for calculating coverage of the rules
@@ -434,10 +438,14 @@ class NewLimeBaseBeam:
         prev_best_b_cands = []
 
         current_size = 0
-        n_features = state["n_features"]
+
         best_of_size: dict[int, list[Rule]] = {}
 
-        while current_size <= n_features:
+        # Set maximum length of the rule
+        if hyper_param.max_rule_length is None:
+            hyper_param.max_rule_length = state["n_features"]
+
+        while current_size <= hyper_param.max_rule_length:
             # -----------------------------------------------------------------
             # Call 'GenerateCands' and get new candidate rules.
             cands: list[Rule]
@@ -502,7 +510,8 @@ class NewLimeBaseBeam:
             # go to next iteration
             prev_best_b_cands = best_of_size[current_size]
             current_size += 1
-        ##
+
+        # end while
 
         if best_rule is None:
             return None
