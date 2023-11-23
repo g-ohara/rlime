@@ -19,7 +19,7 @@ class Dataset(anchor.utils.Bunch):
         self.labels_train: np.ndarray
         self.labels_test: list[np.ndarray]
         self.feature_names: list[str]
-        self.categorical_names: list[list[str]]
+        self.categorical_names: dict[int, list[str]]
         self.class_target: str
         self.class_names: list[str]
 
@@ -27,38 +27,43 @@ class Dataset(anchor.utils.Bunch):
 def load_dataset(dataset_name: str, dataset_folder: str) -> Dataset:
     """Download balanced and descretized dataset"""
 
-    bunch = anchor.utils.load_dataset(
-        dataset_name=dataset_name,
-        dataset_folder=dataset_folder,
-        balance=True,
-        discretize=True,
+    rcdv_categorical_names = {
+        0: ["Black", "White"],
+        1: ["No", "Yes"],
+        2: ["No", "Yes"],
+        3: ["No", "Yes"],
+        4: ["No", "Married"],
+        5: ["No", "Yes"],
+        6: ["No", "Yes"],
+        7: ["No", "Yes"],
+        8: ["No", "Yes"],
+        9: ["Female", "Male"],
+    }
+    class_names = {
+        "recidivism": ["No more crimes", "Re-arrested"],
+        "adult": ["<=50K", ">50K"],
+    }
+
+    dataset = typing.cast(
+        Dataset,
+        anchor.utils.load_dataset(
+            dataset_name=dataset_name,
+            dataset_folder=dataset_folder,
+            balance=True,
+            discretize=True,
+        ),
     )
-    return typing.cast(Dataset, bunch)
 
+    if dataset_name == "recidivism":
+        for key, val in rcdv_categorical_names.items():
+            dataset.categorical_names[key] = val
+    dataset.class_names = class_names[dataset_name]
 
-transformations = {
-    0: lambda x: ["Black", "White"][x],
-    1: lambda x: ["No", "Yes"][x],
-    2: lambda x: ["No", "Yes"][x],
-    3: lambda x: ["No", "Yes"][x],
-    4: lambda x: ["No", "Married"][x],
-    5: lambda x: ["No", "Yes"][x],
-    6: lambda x: ["No", "Yes"][x],
-    7: lambda x: ["No", "Yes"][x],
-    8: lambda x: ["No", "Yes"][x],
-    9: lambda x: ["Female", "Male"][x],
-    10: lambda x: x,
-    11: lambda x: x,
-    12: lambda x: x,
-    13: lambda x: x,
-    14: lambda x: x,
-    15: lambda x: x,
-    16: lambda x: ["No more crimes", "Re-arrested"][x],
-}
+    return dataset
 
 
 def get_categorical_names(
-    data: list[int], categorical_names: list[list[str]]
+    data: list[int], categorical_names: dict[int, list[str]]
 ) -> list[str]:
     """Convert integer features to categorical strings"""
     ret = []
@@ -68,7 +73,7 @@ def get_categorical_names(
 
 
 def get_trg_sample(
-    index: int | None, bunch: anchor.utils.Bunch, dataset_name: str
+    index: int | None, bunch: anchor.utils.Bunch
 ) -> tuple[np.ndarray, np.ndarray, list[tuple[str, str]]]:
     """Get a sample randomly from test set"""
 
@@ -82,12 +87,6 @@ def get_trg_sample(
 
     int_list = list(int(x) for x in trg)
     str_list = get_categorical_names(int_list, dataset.categorical_names)
-    if dataset_name == "recidivism":
-        str_list = [
-            str(transformations[i](int(x))) if x.isnumeric() else x
-            for i, x in enumerate(str_list)
-        ]
-
     str_list = [
         f"{x} ({int(int_list[i])})" if not x.isnumeric() else x
         for i, x in enumerate(str_list)
@@ -95,10 +94,7 @@ def get_trg_sample(
 
     trg_data: list[tuple[str, str]]
     trg_data = list(zip(dataset.feature_names, str_list))
-    if dataset_name == "recidivism":
-        label_name = ["No more crimes", "Re-arrested"][label]
-    else:
-        label_name = ["<=50K", ">50K"][label]
+    label_name = dataset.class_names[label]
 
     trg_data.append((dataset.class_target, f"{label_name} ({label})"))
     return trg, label, trg_data
