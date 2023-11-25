@@ -445,7 +445,7 @@ class NewLimeBaseBeam:
         if hyper_param.max_rule_length is None:
             hyper_param.max_rule_length = state["n_features"]
 
-        while current_size <= hyper_param.max_rule_length:
+        while current_size < hyper_param.max_rule_length:
             # -----------------------------------------------------------------
             # Call 'GenerateCands' and get new candidate rules.
             cands: list[Rule]
