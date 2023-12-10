@@ -24,7 +24,9 @@ class Dataset(anchor.utils.Bunch):
         self.class_names: list[str]
 
 
-def load_dataset(dataset_name: str, dataset_folder: str) -> Dataset:
+def load_dataset(
+    dataset_name: str, dataset_folder: str, balance: bool
+) -> Dataset:
     """Download balanced and descretized dataset"""
 
     rcdv_categorical_names = {
@@ -49,7 +51,7 @@ def load_dataset(dataset_name: str, dataset_folder: str) -> Dataset:
         anchor.utils.load_dataset(
             dataset_name=dataset_name,
             dataset_folder=dataset_folder,
-            balance=True,
+            balance=balance,
             discretize=True,
         ),
     )
@@ -57,7 +59,9 @@ def load_dataset(dataset_name: str, dataset_folder: str) -> Dataset:
     if dataset_name == "recidivism":
         for key, val in rcdv_categorical_names.items():
             dataset.categorical_names[key] = val
-    dataset.class_names = class_names[dataset_name]
+
+    if dataset_name != "lending":
+        dataset.class_names = class_names[dataset_name]
 
     return dataset
 
@@ -80,7 +84,7 @@ def get_trg_sample(
     dataset = typing.cast(Dataset, bunch)
 
     if index is None:
-        index = random.randint(10, dataset.test.shape[0])
+        index = random.randint(0, dataset.test.shape[0] - 1)
 
     trg = dataset.test[index]
     label = dataset.labels_test[index]

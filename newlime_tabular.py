@@ -186,8 +186,8 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                 Data points sampled from neighborhood of the target rule
                 (present).
                 raw_data : np.ndarray
-                    Original data points sampled from neighborhood of the
-                    target rule.
+                    Original data points sampled under the target rule
+                    (present).
                 d_raw_data : np.ndarray
                     Discretized data points (Discretized raw_data).
                 data : np.ndarray
@@ -197,7 +197,11 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                 present, mapping
             )
 
-            # Sample new data points
+            # Sample new data points (sample_from_train)
+            # 1. Get samples randomly from train set
+            # 2. Change the values of each sample to match the given conditions
+            # NOTE: This proceidure assumes that the features are independent
+            # of each other, but this assumption does not hold in general.
             raw_data: np.ndarray = self.sample_from_train(
                 conditions.eq, {}, conditions.geq, conditions.leq, num_samples
             )
