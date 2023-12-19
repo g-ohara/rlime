@@ -51,7 +51,7 @@ class HyperParam:  # pylint: disable=too-many-instance-attributes
     epsilon_stop: float = 0.05
     beam_size: int = 10
     batch_size: int = 10
-    desired_confidence: float = 1.0
+    desired_confidence: float = 0.95  # tau
     coverage_samples_num: int = 10000
     max_rule_length: int | None = None
 

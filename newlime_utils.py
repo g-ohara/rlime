@@ -3,12 +3,20 @@
     NewLIME.
 """
 
+import csv
 import random
 import typing
 
+import anchor
 import anchor.utils
 import matplotlib.pyplot as plt
 import numpy as np
+import sklearn.ensemble
+from anchor import anchor_tabular
+from lime import explanation, lime_tabular
+from tabulate import tabulate
+
+import newlime_tabular
 
 
 class Dataset(anchor.utils.Bunch):
@@ -112,13 +120,32 @@ def plot_weights(
     coverage: float | None = None,
     img_name: str | None = None,
 ) -> None:
-    # pylint: disable=unused-argument
+    """Plot the weights of the surrogate model.
+
+    Parameters
+    ----------
+    weights : list[float]
+        The weights of the features
+    feature_names : list[str]
+        The names of the features
+    anchor_str : str, optional
+        The rule, by default None
+    precision : float, optional
+        The precision, by default None
+    coverage : float, optional
+        The coverage, by default None
+    img_name : str, optional
+        The name of the image, by default None
+
+    Returns
+    -------
+    None
+    """
 
     features = feature_names
-    values = weights
-    abs_values = [abs(x) for x in values]
+    abs_values = [abs(x) for x in weights]
     _, sorted_features, sorted_values = zip(
-        *sorted(zip(abs_values, features, values), reverse=False)[-5:]
+        *sorted(zip(abs_values, features, weights), reverse=False)[-5:]
     )
     plt.figure()
     color = [
@@ -139,4 +166,207 @@ def plot_weights(
     if img_name is not None:
         plt.savefig(img_name, bbox_inches="tight")
 
-    plt.close()
+
+def sample(
+    index: int,
+    dataset: Dataset,
+    dataset_name: str,
+    model: sklearn.ensemble.RandomForestClassifier,
+    print_info: bool = True,
+    write_file: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Get a sample and return the target sample and the label.
+
+    Parameters
+    ----------
+    index : int
+        The index of the sample
+    dataset : Dataset
+        The dataset
+    dataset_name : str
+        The name of the dataset
+    model : sklearn.ensemble.RandomForestClassifier
+        The black box model (random forest)
+    print_info : bool, optional
+        Print the prediction and the true label, by default True
+    write_file : bool, optional
+        Write the target sample to a csv file, by default False
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        The target sample and the label
+    """
+
+    trg, label, tab = get_trg_sample(index, dataset)
+    if print_info:
+        print(
+            "Prediction:",
+            dataset.class_names[model.predict(trg.reshape(1, -1))[0]],
+        )
+        print("True:      ", dataset.class_names[dataset.labels_test[index]])
+        print(tabulate(tab))
+    if write_file:
+        csv_name = f"img/{dataset_name}/{index:05d}-instance.csv"
+        with open(csv_name, "w", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerows([["feature", "value"]])
+            writer.writerows(tab)
+    return trg, label
+
+
+def lime_original(
+    trg: np.ndarray,
+    pred_label: int,
+    dataset: Dataset,
+    model: sklearn.ensemble.RandomForestClassifier,
+) -> list[float]:
+    """Run LIME and plot the weights.
+
+    Parameters
+    ----------
+    trg : np.ndarray
+        The target sample
+    pred_label : int
+        The predicted label of the target sample
+    dataset : Dataset
+        The dataset
+    model : sklearn.ensemble.RandomForestClassifier
+        The black box model (random forest)
+
+    Returns
+    -------
+    list[float]
+        The weights of the features
+    """
+
+    lime_explainer = lime_tabular.LimeTabularExplainer(
+        dataset.train,
+        feature_names=dataset.feature_names,
+        class_names=dataset.class_names,
+        discretize_continuous=False,
+    )
+    lime_exp = lime_explainer.explain_instance(
+        trg, model.predict_proba, num_features=5, top_labels=1
+    )
+    weights = [0.0] * len(dataset.feature_names)
+    for t in lime_exp.local_exp[pred_label]:
+        weights[t[0]] = t[1] * (pred_label * 2 - 1)
+    return weights
+
+
+def anchor_original(
+    trg: np.ndarray,
+    dataset: Dataset,
+    model: sklearn.ensemble.RandomForestClassifier,
+    threshold: float = 0.80,
+) -> tuple[float, str, float, float]:
+    """Run Anchor and print the rule, precision and coverage on the terminal.
+
+    Parameters
+    ----------
+    trg : np.ndarray
+        The target sample
+    dataset : Dataset
+        The dataset
+    model : sklearn.ensemble.RandomForestClassifier
+        The black box model (random forest)
+    threshold : float, optional
+        The threshold, by default 0.80
+
+    Returns
+    -------
+    tuple[float, str, float, float]
+        The threshold, rule, precision and coverage
+    """
+
+    anchor_explainer = anchor_tabular.AnchorTabularExplainer(
+        dataset.class_names,
+        dataset.feature_names,
+        dataset.train,
+        dataset.categorical_names,
+    )
+    anchor_exp = anchor_explainer.explain_instance(
+        trg, model.predict, threshold
+    )
+    anchor_str = " AND ".join(anchor_exp.names())
+    return threshold, anchor_str, anchor_exp.precision(), anchor_exp.coverage()
+
+
+def new_lime(
+    trg: np.ndarray,
+    dataset: Dataset,
+    model: sklearn.ensemble.RandomForestClassifier,
+    hyper_param: newlime_tabular.HyperParam,
+    print_info: bool = True,
+) -> tuple[str, float, float] | None:
+    """Run NewLIME and return the rule, precision and coverage
+
+    Parameters
+    ----------
+    trg : newlime_tabular.Sample
+        The target sample
+    dataset : Dataset
+        The dataset
+    model : sklearn.ensemble.RandomForestClassifier
+        The black box model (random forest)
+    hyper_param : newlime_tabular.HyperParam
+        The hyperparameters
+    print_info : bool, optional
+        Print the rule, precision and coverage, by default True
+
+    Returns
+    -------
+    tuple[str, float, float] | None
+        The rule, precision and coverage
+    """
+
+    if print_info:
+        print("-----------")
+        print("Threshold: ", hyper_param.desired_confidence)
+
+    anchor_explainer = newlime_tabular.NewLimeTabularExplainer(
+        dataset.class_names,
+        dataset.feature_names,
+        dataset.train,
+        dataset.categorical_names,
+    )
+    result = anchor_explainer.my_explain_instance(
+        trg, model.predict, hyper_param
+    )
+
+    if result is None:
+        return None
+
+    anchor_exp, surrogate_model = result
+    if surrogate_model is None:
+        return None
+
+    def concat_names(names: list[str]) -> str:
+        """concatenate the names to multiline string"""
+        multiline_names = []
+        max_i = int(len(names) / 3)
+        for i in range(max_i):
+            triple = [names[i * 3], names[i * 3 + 1], names[i * 3 + 2]]
+            multiline_names.append(" AND ".join(triple))
+        if len(names) != max_i * 3:
+            multiline_names.append(" AND ".join(names[max_i * 3 :]))
+        return " AND \n".join(multiline_names)
+
+    # get information incuding rule, precision and coverage
+    weights = list(surrogate_model["LogisticRegression"].weights.values())
+    rule = concat_names(anchor_exp.names())
+    prec = anchor_exp.precision()
+    cov = anchor_exp.coverage()
+    if print_info:
+        print("Rule     : ", rule)
+        print("Precision: ", prec)
+        print("Coverage : ", cov)
+
+    # plot the weights of the surrogate model
+    if not weights:
+        print("Error! Surrogate model has no weights!")
+    elif print_info:
+        plot_weights(weights, dataset.feature_names, rule, prec, cov)
+
+    return rule, prec, cov
