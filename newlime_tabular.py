@@ -1,4 +1,7 @@
-"""NewLIME for tabular datasets"""
+"""NewLIME for tabular datasets
+
+This module implements NewLIME explainer for tabular datasets.
+"""
 
 import dataclasses
 
@@ -17,7 +20,17 @@ Mapping = dict[int, Predicate]
 
 @dataclasses.dataclass
 class Conditions:
-    """Class for conditions of equality and inequality"""
+    """Class for conditions of equality and inequality.
+
+    Attributes
+    ----------
+    eq : dict[int, int]
+        Equality conditions.
+    leq : dict[int, int]
+        Inequality conditions (<=).
+    geq : dict[int, int]
+        Inequality conditions (>=).
+    """
 
     eq: dict[int, int]
     leq: dict[int, int]
@@ -25,15 +38,30 @@ class Conditions:
 
 
 class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
-    """
-    Args:
-        class_names: list of strings
-        feature_names: list of strings
-        train_data: used to sample (bootstrap)
-        categorical_names: map from integer to list of strings, names for each
-            value of the categorical features. Every feature that is not in
-            this map will be considered as ordinal or continuous, and thus
-            discretized.
+    """NewLIME explainer for tabular datasets.
+
+    Attributes
+    ----------
+    categorical_features: list of int
+        indices of categorical features
+    ordinal_features: list of int
+        indices of ordinal categorical features
+
+    Parameters
+    ----------
+    training_data: np.ndarray
+        training data
+    encoder_fn: callable
+        function that takes raw data and returns encoded data
+    disc: anchor.discretize.BaseDiscretizer
+        discretizer for continuous features
+
+    Keyword Arguments
+    -----------------
+    categorical_names: dict[int, list[str]]
+        map from integer to list of strings, names for each value of the
+        categorical features. Every feature that is not in this map will be
+        considered as ordinal or continuous, and thus discretized.
     """
 
     @staticmethod
@@ -41,7 +69,27 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         present: newlime_base.Rule, mapping: Mapping
     ) -> Conditions:
         """Classify conditions in given rule into eqality, inequality(<) and
-        inequality(>)"""
+        inequality(>).
+
+        Parameters
+        ----------
+        present : tuple[int, ...]
+            Target rule.
+        mapping : dict[int, tuple[int, str, int]]
+            Set of conditions in target instance (data_row).
+            f : int
+                index of feature
+            op : str
+                comparison operator
+            v : int
+                index of categorical name
+
+        Returns
+        -------
+        Conditions
+            Classify conditions in given rule into eqality, inequality(<) and
+            inequality(>).
+        """
 
         conditions_eq: dict[int, int] = {}
         conditions_leq: dict[int, int] = {}
@@ -73,7 +121,30 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         num_samples: int,
         mapping: Mapping,
     ) -> np.ndarray:
-        """Restore original representations for new data points"""
+        """Restore original representations for new data points.
+
+        Parameters
+        ----------
+        data_row : np.ndarray
+            Target instance.
+        d_raw_data : np.ndarray
+            Discretized data points (Discretized raw_data).
+        num_samples : int
+            The number of returned sample.
+        mapping : dict[int, tuple[int, str, int]]
+            Set of conditions in target instance (data_row).
+            f : int
+                index of feature
+            op : str
+                comparison operator
+            v : int
+                index of categorical name
+
+        Returns
+        -------
+        np.ndarray
+            Original representations for new data points.
+        """
 
         data: np.ndarray = np.zeros((num_samples, len(mapping)), int)
         for i, predicate in mapping.items():
@@ -243,7 +314,23 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         | None
     ):
         """Generate NewLIME explanation for given classifier on neighborhood of
-        given data point"""
+        given data point.
+
+        Parameters
+        ----------
+        data_row : np.ndarray
+            Target instance.
+        classifier_fn: Classifier
+            Blackbox classifier that labels new data points.
+        hyper_param: HyperParam
+            Hyperparameters for NewLIME.
+
+        Returns
+        -------
+        tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None] |
+        None
+            The explanation and the surrogate model.
+        """
 
         # It's possible to pass in max_anchor_size
         sample_fn, mapping = self.get_sample_fn(data_row, classifier_fn)
