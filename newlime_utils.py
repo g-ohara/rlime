@@ -22,10 +22,17 @@ import newlime_tabular
 class Dataset(anchor.utils.Bunch):
     def __init__(self) -> None:
         super(Dataset, self).__init__({})
+        self.data: np.ndarray
+        self.labels: np.ndarray
+        self.train_idx: np.ndarray
         self.train: np.ndarray
-        self.test: np.ndarray
         self.labels_train: np.ndarray
-        self.labels_test: list[np.ndarray]
+        self.validation_idx: np.ndarray
+        self.validation: np.ndarray
+        self.labels_validation: np.ndarray
+        self.test_idx: np.ndarray
+        self.test: np.ndarray
+        self.labels_test: np.ndarray
         self.feature_names: list[str]
         self.categorical_names: dict[int, list[str]]
         self.class_target: str
@@ -70,6 +77,58 @@ def load_dataset(
 
     if dataset_name != "lending":
         dataset.class_names = class_names[dataset_name]
+
+    return dataset
+
+
+def get_imbalanced_dataset(dataset: Dataset, pos_rate: float) -> Dataset:
+    pos_num = int(pos_rate * dataset.data.shape[0])
+    pos_data_idx = []
+    for i, l in enumerate(dataset.labels):
+        if l == 1:
+            pos_data_idx.append(i)
+    np.random.seed(1024)
+    del_list = np.random.choice(
+        pos_data_idx,
+        len(pos_data_idx) - pos_num,
+        replace=False,
+    )
+
+    del_train_list = []
+    for i, x in enumerate(dataset.train_idx):
+        if x in del_list:
+            del_train_list.append(i)
+
+    del_valid_list = []
+    for i, x in enumerate(dataset.validation_idx):
+        if x in del_list:
+            del_valid_list.append(i)
+
+    del_test_list = []
+    for i, x in enumerate(dataset.test_idx):
+        if x in del_list:
+            del_test_list.append(i)
+
+    dataset.data = np.delete(dataset.data, del_list, axis=0)
+    dataset.labels = np.delete(dataset.labels, del_list, axis=0)
+
+    dataset.train = np.delete(dataset.train, del_train_list, axis=0)
+    dataset.labels_train = dataset.data = np.delete(
+        dataset.labels_train, del_train_list, axis=0
+    )
+    dataset.train_idx = np.delete(dataset.train_idx, del_train_list, axis=0)
+
+    dataset.validation = np.delete(dataset.validation, del_valid_list, axis=0)
+    dataset.labels_validation = np.delete(
+        dataset.labels_validation, del_valid_list, axis=0
+    )
+    dataset.validation_idx = np.delete(
+        dataset.validation_idx, del_valid_list, axis=0
+    )
+
+    dataset.test = np.delete(dataset.test, del_test_list, axis=0)
+    dataset.labels_test = np.delete(dataset.labels_test, del_test_list, axis=0)
+    dataset.test_idx = np.delete(dataset.test_idx, del_test_list, axis=0)
 
     return dataset
 
