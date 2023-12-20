@@ -82,7 +82,8 @@ def load_dataset(
 
 
 def get_imbalanced_dataset(dataset: Dataset, pos_rate: float) -> Dataset:
-    pos_num = int(pos_rate * dataset.data.shape[0])
+    neg_num = np.sum(dataset.labels == 0)
+    pos_num = int(pos_rate * neg_num / (1 - pos_rate))
     pos_data_idx = []
     for i, l in enumerate(dataset.labels):
         if l == 1:

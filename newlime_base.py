@@ -403,7 +403,7 @@ class NewLimeBaseBeam:
                 hyper_param.epsilon,
                 hyper_param.delta,
                 hyper_param.batch_size,
-                hyper_param.beam_size,
+                min(hyper_param.beam_size, len(cands)),
             )
         )
 
