@@ -3,40 +3,60 @@
     NewLIME.
 """
 
-import csv
 import random
 import typing
+from dataclasses import dataclass
 
 import anchor
 import anchor.utils
 import matplotlib.pyplot as plt
 import numpy as np
 import sklearn.ensemble
-from anchor import anchor_tabular
-from lime import explanation, lime_tabular
-from tabulate import tabulate
-
-import newlime_tabular
+from anchor import anchor_explanation, anchor_tabular
+from lime import lime_tabular
 
 
-class Dataset(anchor.utils.Bunch):
-    def __init__(self) -> None:
-        super(Dataset, self).__init__({})
-        self.data: np.ndarray
-        self.labels: np.ndarray
-        self.train_idx: np.ndarray
-        self.train: np.ndarray
-        self.labels_train: np.ndarray
-        self.validation_idx: np.ndarray
-        self.validation: np.ndarray
-        self.labels_validation: np.ndarray
-        self.test_idx: np.ndarray
-        self.test: np.ndarray
-        self.labels_test: np.ndarray
-        self.feature_names: list[str]
-        self.categorical_names: dict[int, list[str]]
-        self.class_target: str
-        self.class_names: list[str]
+@dataclass
+class Dataset(
+    anchor.utils.Bunch
+):  # pylint: disable=too-many-instance-attributes
+    """Dataset class"""
+
+    data: np.ndarray
+    labels: np.ndarray
+    train_idx: np.ndarray
+    train: np.ndarray
+    labels_train: np.ndarray
+    validation_idx: np.ndarray
+    validation: np.ndarray
+    labels_validation: np.ndarray
+    test_idx: np.ndarray
+    test: np.ndarray
+    labels_test: np.ndarray
+    feature_names: list[str]
+    categorical_names: dict[int, list[str]]
+    class_target: str
+    class_names: list[str]
+
+
+# class Dataset(anchor.utils.Bunch):
+#     def __init__(self) -> None:
+#         super().__init__({})
+#         self.data: np.ndarray
+#         self.labels: np.ndarray
+#         self.train_idx: np.ndarray
+#         self.train: np.ndarray
+#         self.labels_train: np.ndarray
+#         self.validation_idx: np.ndarray
+#         self.validation: np.ndarray
+#         self.labels_validation: np.ndarray
+#         self.test_idx: np.ndarray
+#         self.test: np.ndarray
+#         self.labels_test: np.ndarray
+#         self.feature_names: list[str]
+#         self.categorical_names: dict[int, list[str]]
+#         self.class_target: str
+#         self.class_names: list[str]
 
 
 def load_dataset(
@@ -82,6 +102,22 @@ def load_dataset(
 
 
 def get_imbalanced_dataset(dataset: Dataset, pos_rate: float) -> Dataset:
+    """Get imbalanced dataset with positive rate pos_rate (0.0 ~ 1.0) from the
+    original dataset
+
+    Parameters
+    ----------
+    dataset : Dataset
+        The dataset to be imbalanced
+    pos_rate : float
+        The positive rate of the imbalanced dataset (0.0 ~ 1.0)
+
+    Returns
+    -------
+    Dataset
+        The imbalanced dataset
+    """
+
     neg_num = np.sum(dataset.labels == 0)
     pos_num = int(pos_rate * neg_num / (1 - pos_rate))
     pos_data_idx = []
@@ -175,9 +211,7 @@ def get_trg_sample(
 def plot_weights(
     weights: list[float],
     feature_names: list[str],
-    anchor_str: str | None = None,
-    precision: float | None = None,
-    coverage: float | None = None,
+    anchor_exp: anchor_explanation.AnchorExplanation | None = None,
     img_name: str | None = None,
 ) -> None:
     """Plot the weights of the surrogate model.
@@ -214,65 +248,31 @@ def plot_weights(
     ]
     plt.barh(sorted_features, sorted_values, color=color)
 
-    if anchor_str is not None:
-        plt.title(
-            f"{anchor_str}\n"
-            f"with Precision {precision:.3f} and Coverage {coverage:.3f}"
-        )
+    def concat_names(names: list[str]) -> str:
+        """concatenate the names to multiline string"""
+        multiline_names = []
+        max_i = int(len(names) / 3)
+        for i in range(max_i):
+            triple = [names[i * 3], names[i * 3 + 1], names[i * 3 + 2]]
+            multiline_names.append(" AND ".join(triple))
+        if len(names) != max_i * 3:
+            multiline_names.append(" AND ".join(names[max_i * 3 :]))
+        return " AND \n".join(multiline_names)
+
+    if anchor_exp is not None:
+        anchor_str = concat_names(anchor_exp.names())
+        if anchor_str is not None:
+            plt.title(
+                f"{anchor_str}\n"
+                f"with Precision {anchor_exp.precision():.3f} "
+                f"and Coverage {anchor_exp.coverage():.3f}"
+            )
 
     for f, v in zip(sorted_features, sorted_values):
         plt.text(v, f, round(v, 5))
 
     if img_name is not None:
         plt.savefig(img_name, bbox_inches="tight")
-
-
-def sample(
-    index: int,
-    dataset: Dataset,
-    dataset_name: str,
-    model: sklearn.ensemble.RandomForestClassifier,
-    print_info: bool = True,
-    write_file: bool = False,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Get a sample and return the target sample and the label.
-
-    Parameters
-    ----------
-    index : int
-        The index of the sample
-    dataset : Dataset
-        The dataset
-    dataset_name : str
-        The name of the dataset
-    model : sklearn.ensemble.RandomForestClassifier
-        The black box model (random forest)
-    print_info : bool, optional
-        Print the prediction and the true label, by default True
-    write_file : bool, optional
-        Write the target sample to a csv file, by default False
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray]
-        The target sample and the label
-    """
-
-    trg, label, tab = get_trg_sample(index, dataset)
-    if print_info:
-        print(
-            "Prediction:",
-            dataset.class_names[model.predict(trg.reshape(1, -1))[0]],
-        )
-        print("True:      ", dataset.class_names[dataset.labels_test[index]])
-        print(tabulate(tab))
-    if write_file:
-        csv_name = f"img/{dataset_name}/{index:05d}-instance.csv"
-        with open(csv_name, "w", newline="", encoding="utf-8") as file:
-            writer = csv.writer(file)
-            writer.writerows([["feature", "value"]])
-            writer.writerows(tab)
-    return trg, label
 
 
 def lime_original(
@@ -351,82 +351,3 @@ def anchor_original(
     )
     anchor_str = " AND ".join(anchor_exp.names())
     return threshold, anchor_str, anchor_exp.precision(), anchor_exp.coverage()
-
-
-def new_lime(
-    trg: np.ndarray,
-    dataset: Dataset,
-    model: sklearn.ensemble.RandomForestClassifier,
-    hyper_param: newlime_tabular.HyperParam,
-    print_info: bool = True,
-) -> tuple[str, float, float] | None:
-    """Run NewLIME and return the rule, precision and coverage
-
-    Parameters
-    ----------
-    trg : newlime_tabular.Sample
-        The target sample
-    dataset : Dataset
-        The dataset
-    model : sklearn.ensemble.RandomForestClassifier
-        The black box model (random forest)
-    hyper_param : newlime_tabular.HyperParam
-        The hyperparameters
-    print_info : bool, optional
-        Print the rule, precision and coverage, by default True
-
-    Returns
-    -------
-    tuple[str, float, float] | None
-        The rule, precision and coverage
-    """
-
-    if print_info:
-        print("-----------")
-        print("Threshold: ", hyper_param.desired_confidence)
-
-    anchor_explainer = newlime_tabular.NewLimeTabularExplainer(
-        dataset.class_names,
-        dataset.feature_names,
-        dataset.train,
-        dataset.categorical_names,
-    )
-    result = anchor_explainer.my_explain_instance(
-        trg, model.predict, hyper_param
-    )
-
-    if result is None:
-        return None
-
-    anchor_exp, surrogate_model = result
-    if surrogate_model is None:
-        return None
-
-    def concat_names(names: list[str]) -> str:
-        """concatenate the names to multiline string"""
-        multiline_names = []
-        max_i = int(len(names) / 3)
-        for i in range(max_i):
-            triple = [names[i * 3], names[i * 3 + 1], names[i * 3 + 2]]
-            multiline_names.append(" AND ".join(triple))
-        if len(names) != max_i * 3:
-            multiline_names.append(" AND ".join(names[max_i * 3 :]))
-        return " AND \n".join(multiline_names)
-
-    # get information incuding rule, precision and coverage
-    weights = list(surrogate_model["LogisticRegression"].weights.values())
-    rule = concat_names(anchor_exp.names())
-    prec = anchor_exp.precision()
-    cov = anchor_exp.coverage()
-    if print_info:
-        print("Rule     : ", rule)
-        print("Precision: ", prec)
-        print("Coverage : ", cov)
-
-    # plot the weights of the surrogate model
-    if not weights:
-        print("Error! Surrogate model has no weights!")
-    elif print_info:
-        plot_weights(weights, dataset.feature_names, rule, prec, cov)
-
-    return rule, prec, cov

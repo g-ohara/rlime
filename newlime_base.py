@@ -26,7 +26,7 @@ Classifier = Callable[[np.ndarray], np.ndarray]
 
 
 @dataclasses.dataclass
-class Sample:
+class Samples:
     """This is a class for perturbed vectors sampled from distribution
 
     Attributes:
@@ -40,7 +40,7 @@ class Sample:
     labels: np.ndarray
 
 
-SampleFn = Callable[[Rule, int, bool, compose.Pipeline | None, bool], Sample]
+SampleFn = Callable[[Rule, int, bool, compose.Pipeline | None, bool], Samples]
 CompleteSampleFn = Callable[[int], float]
 State = dict[str, Any]
 Anchor = dict[str, Any]
@@ -89,20 +89,6 @@ class HyperParam:  # pylint: disable=too-many-instance-attributes
     max_rule_length: int | None = None
 
 
-# class Arm:
-#     def __init__(self, rule: Rule, sample_fn: SampleFn) -> None:
-#         self.rule = rule
-#         self.model = compose.Pipeline(
-#             preprocessing.StandardScaler(), linear_model.LogisticRegression()
-#         )
-#         self.sample_fn = sample_fn
-#
-#     def get_reward(self, sample_num: int, state: State) -> float:
-#         return NewLimeBaseBeam.complete_sample_fn(
-#             self.sample_fn, self.rule, sample_num, self.model, state
-#         )
-
-
 class NewLimeBaseBeam:
     """This is a class for beam search of best anchor.
 
@@ -138,19 +124,19 @@ class NewLimeBaseBeam:
 
     @staticmethod
     def update_state(
-        state: State, rule: Rule, batch_size: int, sample: Sample
+        state: State, rule: Rule, batch_size: int, samples: Samples
     ) -> None:
         """Update state after sampling
 
         Parameters
         ----------
-        state: dict
+        state: State
             The state of the beam search
         rule: tuple
             The rule under which the perturbed vectors are sampled
         batch_size: int
             The number of perturbed vectors sampled
-        sample: Sample
+        samples: Samples
             The sampled perturbed vectors
         """
 
@@ -160,34 +146,34 @@ class NewLimeBaseBeam:
         idxs: range
         idxs = range(current_idx, current_idx + batch_size)
 
-        if "<U" in str(sample.raw_data.dtype):
+        if "<U" in str(samples.raw_data.dtype):
             # String types: make sure both string types are of maximum length
             # to avoid string truncation. E.g., '<U308', '<U290' -> '<U308'
             max_dtype = max(
-                str(state["raw_data"].dtype), str(sample.raw_data.dtype)
+                str(state["raw_data"].dtype), str(samples.raw_data.dtype)
             )
             state["raw_data"] = state["raw_data"].astype(max_dtype)
-            sample.raw_data = sample.raw_data.astype(max_dtype)
+            samples.raw_data = samples.raw_data.astype(max_dtype)
 
         state["t_idx"][rule].update(idxs)
         state["t_nsamples"][rule] += batch_size
-        state["t_positives"][rule] += sample.labels.sum()
-        state["data"][idxs] = sample.data
-        state["raw_data"][idxs] = sample.raw_data
-        if len(sample.labels) > 0:
-            state["labels"][idxs] = sample.labels
+        state["t_positives"][rule] += samples.labels.sum()
+        state["data"][idxs] = samples.data
+        state["raw_data"][idxs] = samples.raw_data
+        if len(samples.labels) > 0:
+            state["labels"][idxs] = samples.labels
         state["current_idx"] += batch_size
         if state["current_idx"] >= state["data"].shape[0] - max(
             1000, batch_size
         ):
             prealloc_size = state["prealloc_size"]
-            current_idx = sample.data.shape[0]
+            current_idx = samples.data.shape[0]
             state["data"] = np.vstack(
                 (
                     state["data"],
                     np.zeros(
-                        (prealloc_size, sample.data.shape[1]),
-                        sample.data.dtype,
+                        (prealloc_size, samples.data.shape[1]),
+                        samples.data.dtype,
                     ),
                 )
             )
@@ -195,13 +181,16 @@ class NewLimeBaseBeam:
                 (
                     state["raw_data"],
                     np.zeros(
-                        (prealloc_size, sample.raw_data.shape[1]),
-                        sample.raw_data.dtype,
+                        (prealloc_size, samples.raw_data.shape[1]),
+                        samples.raw_data.dtype,
                     ),
                 )
             )
             state["labels"] = np.hstack(
-                (state["labels"], np.zeros(prealloc_size, sample.labels.dtype))
+                (
+                    state["labels"],
+                    np.zeros(prealloc_size, samples.labels.dtype),
+                )
             )
         # This can be really slow
         # state['data'] = np.vstack((state['data'], data))
@@ -217,13 +206,14 @@ class NewLimeBaseBeam:
         n: int,
         model: compose.Pipeline | None,
         state: State,
-    ) -> float:
+    ) -> int:
         """Sample perturbed vectors, update state and returns the reward
 
         Parameters
         ----------
-        sample_fn: Callable
-            The function that samples perturbed vectors
+        sample_fn: SampleFn
+            The function that ONLY samples perturbed vectors.
+            It does NOT update the surrogate model.
         rule: tuple
             The rule under which the perturbed vectors are sampled
         n: int
@@ -241,14 +231,13 @@ class NewLimeBaseBeam:
 
         # *****************************************************************
         # Take a sample satisfying the tuple t.
-        sample: Sample
-        sample = sample_fn(rule, n, True, model, True)
+        samples: Samples
+        samples = sample_fn(rule, n, True, model, True)
         # *****************************************************************
 
-        NewLimeBaseBeam.update_state(state, rule, n, sample)
+        NewLimeBaseBeam.update_state(state, rule, n, samples)
 
-        ret: float = sample.labels.sum()
-        return ret
+        return int(samples.labels.sum())
 
     ##
 
@@ -288,7 +277,8 @@ class NewLimeBaseBeam:
         Parameters
         ----------
         sample_fn: Callable
-            The function that samples perturbed vectors
+            The function that samples perturbed vectors, updates the
+            surrogate model and returns the reward
         tuples: list
             The list of rules
         surrogate_models: list
@@ -298,7 +288,7 @@ class NewLimeBaseBeam:
 
         Returns
         -------
-        list
+        list[CompleteSampleFn]
             The list of functions that sample, update model and return sample
         """
         # each sample fn returns number of instances that the surrogate model
@@ -308,20 +298,12 @@ class NewLimeBaseBeam:
         for rule, model in zip(tuples, surrogate_models):
             partial_fn = functools.partial(
                 NewLimeBaseBeam.complete_sample_fn,
-                sample_fn=sample_fn,
+                sample_fn,
+                rule,
+                model=model,
+                state=state,
             )
-
-            def fn(
-                n: int,
-                rule: Rule = rule,
-                model: compose.Pipeline = model,
-                state: State = state,
-            ) -> float:
-                return partial_fn(  # pylint: disable=cell-var-from-loop
-                    n=n, rule=rule, model=model, state=state
-                )
-
-            sample_fns.append(fn)
+            sample_fns.append(partial_fn)
 
         return sample_fns
 
@@ -391,6 +373,9 @@ class NewLimeBaseBeam:
         sample_fns = NewLimeBaseBeam.get_sample_fns(
             sample_fn, cands, surrogate_models, state
         )
+
+        for fn in sample_fns:
+            fn(hyper_param.batch_size)
 
         initial_stats = NewLimeBaseBeam.get_initial_statistics(cands)
 
@@ -558,24 +543,24 @@ class NewLimeBaseBeam:
             The state of the beam search
         """
 
-        sample: Sample
-        sample = sample_fn(
+        samples: Samples
+        samples = sample_fn(
             (), hyper_param.coverage_samples_num, False, None, True
         )
 
         # data for calculating coverage of the rules
         coverage_data: np.ndarray
-        coverage_data = sample.data
+        coverage_data = samples.data
 
         prealloc_size = hyper_param.batch_size * 10000
         current_idx = 0
         data = np.zeros(
-            (prealloc_size, sample.raw_data.shape[1]), coverage_data.dtype
+            (prealloc_size, samples.raw_data.shape[1]), coverage_data.dtype
         )
         raw_data = np.zeros(
-            (prealloc_size, sample.raw_data.shape[1]), sample.raw_data.dtype
+            (prealloc_size, samples.raw_data.shape[1]), samples.raw_data.dtype
         )
-        labels = np.zeros(prealloc_size, sample.labels.dtype)
+        labels = np.zeros(prealloc_size, samples.labels.dtype)
 
         n_features = data.shape[1]
 

@@ -12,7 +12,7 @@ from river import compose
 
 import newlime_base
 from newlime_base import (Anchor, Classifier, HyperParam, NewLimeBaseBeam,
-                          Sample, SampleFn)
+                          SampleFn, Samples)
 
 Predicate = tuple[int, str, int]
 Mapping = dict[int, Predicate]
@@ -232,7 +232,7 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             compute_labels: bool = True,
             surrogate_model: compose.Pipeline | None = None,
             update_model: bool = True,
-        ) -> Sample:
+        ) -> Samples:
             """Get sample satisfying given rule and its label predicted by
             the surrogate model, then update the surrogate model for the sample
 
@@ -298,7 +298,7 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                     surrogate_model.learn_many(data_x, data_y)
             # *****************************************************************
 
-            return Sample(raw_data, data, labels)
+            return Samples(raw_data, data, labels)
 
         ##
 
