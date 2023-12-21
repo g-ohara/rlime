@@ -40,8 +40,8 @@ class Samples:
     labels: np.ndarray
 
 
-SampleFn = Callable[[Rule, int, bool, compose.Pipeline | None, bool], Samples]
-CompleteSampleFn = Callable[[int], float]
+SampleFn = Callable[[int, Rule, bool, compose.Pipeline | None, bool], Samples]
+CompleteSampleFn = Callable[[int, bool], float]
 State = dict[str, Any]
 Anchor = dict[str, Any]
 
@@ -84,6 +84,7 @@ class HyperParam:  # pylint: disable=too-many-instance-attributes
     epsilon_stop: float = 0.05
     beam_size: int = 10
     batch_size: int = 10
+    init_sample_num: int = 1000
     desired_confidence: float = 0.95  # tau
     coverage_samples_num: int = 10000
     max_rule_length: int | None = None
@@ -139,6 +140,12 @@ class NewLimeBaseBeam:
         samples: Samples
             The sampled perturbed vectors
         """
+
+        assert len(samples.raw_data) == batch_size
+
+        # Do not update the state if no samples are generated
+        if len(samples.raw_data) == 0:
+            return
 
         current_idx: int
         current_idx = state["current_idx"]
@@ -201,9 +208,10 @@ class NewLimeBaseBeam:
 
     @staticmethod
     def complete_sample_fn(
+        n: int,
+        update_state: bool,
         sample_fn: SampleFn,
         rule: Rule,
-        n: int,
         model: compose.Pipeline | None,
         state: State,
     ) -> int:
@@ -220,7 +228,7 @@ class NewLimeBaseBeam:
             The number of perturbed vectors sampled
         model: Pipeline
             The model learned under the rule
-        state: dict
+        state: State
             The state of the beam search
 
         Returns
@@ -232,10 +240,12 @@ class NewLimeBaseBeam:
         # *****************************************************************
         # Take a sample satisfying the tuple t.
         samples: Samples
-        samples = sample_fn(rule, n, True, model, True)
+        samples = sample_fn(n, rule, True, model, True)
         # *****************************************************************
 
-        NewLimeBaseBeam.update_state(state, rule, n, samples)
+        if update_state:
+            # Update the state.
+            NewLimeBaseBeam.update_state(state, rule, n, samples)
 
         return int(samples.labels.sum())
 
@@ -298,16 +308,22 @@ class NewLimeBaseBeam:
         for rule, model in zip(tuples, surrogate_models):
             partial_fn = functools.partial(
                 NewLimeBaseBeam.complete_sample_fn,
-                sample_fn,
-                rule,
+                sample_fn=sample_fn,
+                rule=rule,
                 model=model,
                 state=state,
             )
             sample_fns.append(partial_fn)
 
-        return sample_fns
+        def wrap(fn: CompleteSampleFn) -> CompleteSampleFn:
+            def wrapped_fn(n: int, update_state: bool = True) -> float:
+                return fn(n, update_state)
 
-    ##
+            return wrapped_fn
+
+        # wrap the partial functions to set the default value of the argument
+        # 'update_state' to True
+        return list(map(wrap, sample_fns))
 
     @staticmethod
     def get_initial_statistics(tuples: list[Rule]) -> dict[str, np.ndarray]:
@@ -374,9 +390,12 @@ class NewLimeBaseBeam:
             sample_fn, cands, surrogate_models, state
         )
 
+        # Learn surrogate models under each rule with initial samples without
+        # updating the state
         for fn in sample_fns:
-            fn(hyper_param.batch_size)
+            fn(hyper_param.init_sample_num, False)
 
+        # Get initial statistics
         initial_stats = NewLimeBaseBeam.get_initial_statistics(cands)
 
         # list of the indexes to B candidate rules with the highest precision
@@ -501,7 +520,7 @@ class NewLimeBaseBeam:
                 and ub
                 >= hyper_param.desired_confidence + hyper_param.epsilon_stop
             ):
-                sample_fns[i](hyper_param.batch_size)
+                sample_fns[i](hyper_param.batch_size, True)
                 mean, lb, ub = NewLimeBaseBeam.update_confidence_bound(
                     t, beta, state
                 )
@@ -545,7 +564,7 @@ class NewLimeBaseBeam:
 
         samples: Samples
         samples = sample_fn(
-            (), hyper_param.coverage_samples_num, False, None, True
+            hyper_param.coverage_samples_num, (), False, None, False
         )
 
         # data for calculating coverage of the rules

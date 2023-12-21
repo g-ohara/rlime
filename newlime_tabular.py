@@ -191,6 +191,8 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
         def predict_fn(x: np.ndarray) -> np.ndarray:
             """Get predictions of the blackbox classifier"""
+            if x.shape[0] == 0:
+                return np.array([])
             return classifier_fn(self.encoder_fn(x))
 
         # must map present here to include categorical features
@@ -227,8 +229,8 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         # 2. Changed the way to compute labels
         #
         def sample_fn(
-            present: newlime_base.Rule,
             num_samples: int,
+            present: newlime_base.Rule,
             compute_labels: bool = True,
             surrogate_model: compose.Pipeline | None = None,
             update_model: bool = True,
@@ -263,6 +265,10 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
                     Discretized data points (Discretized raw_data).
                 data : np.ndarray
             """
+
+            # Return empty data if the number of samples is 0
+            if num_samples == 0:
+                return Samples(np.array([]), np.array([]), np.array([]))
 
             conditions = NewLimeTabularExplainer.get_conditions(
                 present, mapping
