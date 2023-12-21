@@ -2,7 +2,7 @@
     This is a program for user explanation to test improved interpretability of
     NewLIME.
 """
-
+import copy
 import random
 import typing
 from dataclasses import dataclass
@@ -101,7 +101,7 @@ def load_dataset(
     return dataset
 
 
-def get_imbalanced_dataset(dataset: Dataset, pos_rate: float) -> Dataset:
+def get_imbalanced_dataset(balanced: Dataset, pos_rate: float) -> Dataset:
     """Get imbalanced dataset with positive rate pos_rate (0.0 ~ 1.0) from the
     original dataset
 
@@ -117,7 +117,7 @@ def get_imbalanced_dataset(dataset: Dataset, pos_rate: float) -> Dataset:
     Dataset
         The imbalanced dataset
     """
-
+    dataset = copy.deepcopy(balanced)
     neg_num = np.sum(dataset.labels == 0)
     pos_num = int(pos_rate * neg_num / (1 - pos_rate))
     pos_data_idx = []

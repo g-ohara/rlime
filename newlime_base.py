@@ -374,18 +374,15 @@ class NewLimeBaseBeam:
             rules, the list of functions that sample, update model and return
             sample, the list of surrogate models
         """
-        # list of the surrogate models under each rule
-        # thus it has the same length as 'tuples'
-        surrogate_models: list[compose.Pipeline]
 
-        # Initialize surrogate models
+        # Initialize the surrogate models under each rule
+        # thus the list has the same length as 'tuples'
+        surrogate_models: list[compose.Pipeline]
         surrogate_models = NewLimeBaseBeam.init_surrogate_models(len(cands))
 
-        # list of the functions to sample perturbed vectors under each rule
-        # thus it has the same length as 'tuples'
+        # Get sampling functions to sample perturbed vectors under each rule
+        # thus the list has the same length as 'tuples'
         sample_fns: list[CompleteSampleFn]
-
-        # Get sampling functions
         sample_fns = NewLimeBaseBeam.get_sample_fns(
             sample_fn, cands, surrogate_models, state
         )
