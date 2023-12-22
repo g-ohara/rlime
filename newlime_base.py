@@ -124,6 +124,31 @@ class NewLimeBaseBeam:
     """
 
     @staticmethod
+    def generate_cands(prev_best: list[Rule], state: State) -> list[Rule]:
+        """Generate candidate rules
+
+        Parameters
+        ----------
+        prev_best_b_cands: list
+            The list of the B best rules of the previous iteration
+        state: State
+            The state of the beam search
+
+        Returns
+        -------
+        list
+            The list of candidate rules
+        """
+
+        if not prev_best:
+            return [()]
+
+        if len(prev_best) == 1 and prev_best[0] == ():
+            prev_best = []
+
+        return list(AnchorBaseBeam.make_tuples(prev_best, state))
+
+    @staticmethod
     def update_state(
         state: State, rule: Rule, batch_size: int, samples: Samples
     ) -> None:
@@ -663,7 +688,7 @@ class NewLimeBaseBeam:
             # -----------------------------------------------------------------
             # Call 'GenerateCands' and get new candidate rules.
             cands: list[Rule]
-            cands = AnchorBaseBeam.make_tuples(prev_best_b_cands, state)
+            cands = NewLimeBaseBeam.generate_cands(prev_best_b_cands, state)
             # -----------------------------------------------------------------
 
             # list of indexes of the B best rules of candidate rules
