@@ -124,6 +124,86 @@ class NewLimeBaseBeam:
     """
 
     @staticmethod
+    def make_tuples(previous_best: list[Rule], state: State) -> list[Rule]:
+        """Generate candidate rules.
+
+        Parameters
+        ----------
+        previous_best: list
+            The list of the B best rules of the previous iteration
+        state: State
+            The state of the beam search
+
+        Returns
+        -------
+        list
+            The list of candidate rules
+        """
+
+        def normalize_tuple(x: tuple[int, ...]) -> tuple[int, ...]:
+            """Normalize tuple
+
+            Parameters
+            ----------
+            x: tuple
+                The tuple to normalize
+
+            Returns
+            -------
+            tuple
+                The normalized tuple
+            """
+            return tuple(sorted(set(x)))
+
+        all_features = range(state["n_features"])
+        coverage_data = state["coverage_data"]
+        current_idx = state["current_idx"]
+        data = state["data"][:current_idx]
+        labels = state["labels"][:current_idx]
+        if len(previous_best) == 0:
+            tuples: list[Rule] = [(x,) for x in all_features]
+            for x in tuples:
+                pres = data[:, x[0]].nonzero()[0]
+                # NEW
+                state["t_idx"][x] = set(pres)
+                state["t_nsamples"][x] = float(len(pres))
+                state["t_positives"][x] = float(labels[pres].sum())
+                # NEW
+                state["t_coverage_idx"][x] = set(
+                    coverage_data[:, x[0]].nonzero()[0]
+                )
+                state["t_coverage"][x] = (
+                    float(len(state["t_coverage_idx"][x]))
+                    / coverage_data.shape[0]
+                )
+            return tuples
+        new_tuples = set()
+        for f in all_features:
+            for t in previous_best:
+                new_t = normalize_tuple(t + (f,))
+                if len(new_t) != len(t) + 1:
+                    continue
+                if new_t not in new_tuples:
+                    new_tuples.add(new_t)
+                    state["t_coverage_idx"][new_t] = state["t_coverage_idx"][
+                        t
+                    ].intersection(state["t_coverage_idx"][(f,)])
+                    state["t_coverage"][new_t] = (
+                        float(len(state["t_coverage_idx"][new_t]))
+                        / coverage_data.shape[0]
+                    )
+                    t_idx = np.array(list(state["t_idx"][t]))
+                    t_data = state["data"][t_idx]
+                    present = np.where(t_data[:, f] == 1)[0]
+                    state["t_idx"][new_t] = set(t_idx[present])
+                    idx_list = list(state["t_idx"][new_t])
+                    state["t_nsamples"][new_t] = float(len(idx_list))
+                    state["t_positives"][new_t] = np.sum(
+                        state["labels"][idx_list]
+                    )
+        return list(new_tuples)
+
+    @staticmethod
     def generate_cands(prev_best: list[Rule], state: State) -> list[Rule]:
         """Generate candidate rules
 
@@ -146,7 +226,7 @@ class NewLimeBaseBeam:
         if len(prev_best) == 1 and prev_best[0] == ():
             prev_best = []
 
-        return list(AnchorBaseBeam.make_tuples(prev_best, state))
+        return list(NewLimeBaseBeam.make_tuples(prev_best, state))
 
     @staticmethod
     def update_state(
