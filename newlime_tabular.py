@@ -292,19 +292,19 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
             )
 
             # *****************************************************************
-            labels: np.ndarray = np.array([])
+            rewards: np.ndarray = np.array([])
             if surrogate_model is not None:
                 data_x: pd.DataFrame = pd.DataFrame(raw_data)
                 data_y = pd.Series(predict_fn(raw_data))
                 if compute_labels:
-                    labels = (
+                    rewards = (
                         surrogate_model.predict_many(data_x) == data_y
                     ).astype(int)
                 if update_model:
                     surrogate_model.learn_many(data_x, data_y)
             # *****************************************************************
 
-            return Samples(raw_data, data, labels)
+            return Samples(raw_data, data, rewards)
 
         ##
 

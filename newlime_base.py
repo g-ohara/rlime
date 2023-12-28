@@ -29,15 +29,21 @@ Classifier = Callable[[np.ndarray], np.ndarray]
 class Samples:
     """This is a class for perturbed vectors sampled from distribution
 
-    Attributes:
-        raw_data: The original data
-        data: The discretized data
-        labels: The labels of the perturbed data
+    Attributes
+    ----------
+    raw_data: np.ndarray
+        The perturbed vectors sampled from distribution
+    data: np.ndarray
+        The boolean vectors that indicates whether the feature is same as the
+        target instance or not
+    rewards: np.ndarray
+        The boolean data that indicates whether the surrogate model predicts
+        the same label as the black box model or not
     """
 
     raw_data: np.ndarray
     data: np.ndarray
-    labels: np.ndarray
+    rewards: np.ndarray
 
 
 SampleFn = Callable[[int, Rule, bool, compose.Pipeline | None, bool], Samples]
@@ -51,7 +57,8 @@ class RuleClass:
     """This is the class for a rule, model learned under that rule,
     precision of that model and coverage of that rule.
 
-    Attributes:
+    Attributes
+    ----------
         rule: The rule
         model: The model learned under that rule
         precision: The precision of that model
@@ -124,6 +131,24 @@ class NewLimeBaseBeam:
     """
 
     @staticmethod
+    def count_covered_samples(rule: Rule, samples: np.ndarray) -> int:
+        """Count the number of samples covered by the rule
+
+        Parameters
+        ----------
+        rule: tuple
+            The rule under which the perturbed vectors are sampled
+        samples: np.ndarray
+            The perturbed vectors
+
+        Returns
+        -------
+        int
+            The number of samples covered by the rule
+        """
+        return sum(all(sample[i] == 1 for i in rule) for sample in samples)
+
+    @staticmethod
     def make_tuples(previous_best: list[Rule], state: State) -> list[Rule]:
         """Generate candidate rules.
 
@@ -136,97 +161,36 @@ class NewLimeBaseBeam:
 
         Returns
         -------
-        list
+        list[rule]
             The list of candidate rules
         """
-
-        def normalize_tuple(x: tuple[int, ...]) -> tuple[int, ...]:
-            """Normalize tuple
-
-            Parameters
-            ----------
-            x: tuple
-                The tuple to normalize
-
-            Returns
-            -------
-            tuple
-                The normalized tuple
-            """
-            return tuple(sorted(set(x)))
 
         all_features = range(state["n_features"])
         coverage_data = state["coverage_data"]
-        current_idx = state["current_idx"]
-        data = state["data"][:current_idx]
-        labels = state["labels"][:current_idx]
+
+        # Generate new candidates.
+        new_cands: list[Rule]
         if len(previous_best) == 0:
-            tuples: list[Rule] = [(x,) for x in all_features]
-            for x in tuples:
-                pres = data[:, x[0]].nonzero()[0]
-                # NEW
-                state["t_idx"][x] = set(pres)
-                state["t_nsamples"][x] = float(len(pres))
-                state["t_positives"][x] = float(labels[pres].sum())
-                # NEW
-                state["t_coverage_idx"][x] = set(
-                    coverage_data[:, x[0]].nonzero()[0]
-                )
-                state["t_coverage"][x] = (
-                    float(len(state["t_coverage_idx"][x]))
-                    / coverage_data.shape[0]
-                )
-            return tuples
-        new_tuples = set()
-        for f in all_features:
-            for t in previous_best:
-                new_t = normalize_tuple(t + (f,))
-                if len(new_t) != len(t) + 1:
-                    continue
-                if new_t not in new_tuples:
-                    new_tuples.add(new_t)
-                    state["t_coverage_idx"][new_t] = state["t_coverage_idx"][
-                        t
-                    ].intersection(state["t_coverage_idx"][(f,)])
-                    state["t_coverage"][new_t] = (
-                        float(len(state["t_coverage_idx"][new_t]))
-                        / coverage_data.shape[0]
-                    )
-                    t_idx = np.array(list(state["t_idx"][t]))
-                    t_data = state["data"][t_idx]
-                    present = np.where(t_data[:, f] == 1)[0]
-                    state["t_idx"][new_t] = set(t_idx[present])
-                    idx_list = list(state["t_idx"][new_t])
-                    state["t_nsamples"][new_t] = float(len(idx_list))
-                    state["t_positives"][new_t] = np.sum(
-                        state["labels"][idx_list]
-                    )
-        return list(new_tuples)
+            new_cands = [()]
+        else:
+            set_tuples = set()
+            for f in all_features:
+                for t in previous_best:
+                    new_t = tuple(sorted(set(t + (f,))))
+                    if len(new_t) != len(t) + 1:
+                        continue
+                    set_tuples.add(new_t)
+            new_cands = list(set_tuples)
 
-    @staticmethod
-    def generate_cands(prev_best: list[Rule], state: State) -> list[Rule]:
-        """Generate candidate rules
+        # Initialize the number of samples, the number of positive samples and
+        # the coverage of the rules.
+        for x in new_cands:
+            state["t_nsamples"][x] = 0
+            state["t_rewards"][x] = 0
+            covered = NewLimeBaseBeam.count_covered_samples(x, coverage_data)
+            state["t_coverage"][x] = covered / coverage_data.shape[0]
 
-        Parameters
-        ----------
-        prev_best_b_cands: list
-            The list of the B best rules of the previous iteration
-        state: State
-            The state of the beam search
-
-        Returns
-        -------
-        list
-            The list of candidate rules
-        """
-
-        if not prev_best:
-            return [()]
-
-        if len(prev_best) == 1 and prev_best[0] == ():
-            prev_best = []
-
-        return list(NewLimeBaseBeam.make_tuples(prev_best, state))
+        return list(new_cands)
 
     @staticmethod
     def update_state(
@@ -252,62 +216,8 @@ class NewLimeBaseBeam:
         if len(samples.raw_data) == 0:
             return
 
-        current_idx: int
-        current_idx = state["current_idx"]
-
-        idxs: range
-        idxs = range(current_idx, current_idx + batch_size)
-
-        if "<U" in str(samples.raw_data.dtype):
-            # String types: make sure both string types are of maximum length
-            # to avoid string truncation. E.g., '<U308', '<U290' -> '<U308'
-            max_dtype = max(
-                str(state["raw_data"].dtype), str(samples.raw_data.dtype)
-            )
-            state["raw_data"] = state["raw_data"].astype(max_dtype)
-            samples.raw_data = samples.raw_data.astype(max_dtype)
-
-        state["t_idx"][rule].update(idxs)
         state["t_nsamples"][rule] += batch_size
-        state["t_positives"][rule] += samples.labels.sum()
-        state["data"][idxs] = samples.data
-        state["raw_data"][idxs] = samples.raw_data
-        if len(samples.labels) > 0:
-            state["labels"][idxs] = samples.labels
-        state["current_idx"] += batch_size
-        if state["current_idx"] >= state["data"].shape[0] - max(
-            1000, batch_size
-        ):
-            prealloc_size = state["prealloc_size"]
-            current_idx = samples.data.shape[0]
-            state["data"] = np.vstack(
-                (
-                    state["data"],
-                    np.zeros(
-                        (prealloc_size, samples.data.shape[1]),
-                        samples.data.dtype,
-                    ),
-                )
-            )
-            state["raw_data"] = np.vstack(
-                (
-                    state["raw_data"],
-                    np.zeros(
-                        (prealloc_size, samples.raw_data.shape[1]),
-                        samples.raw_data.dtype,
-                    ),
-                )
-            )
-            state["labels"] = np.hstack(
-                (
-                    state["labels"],
-                    np.zeros(prealloc_size, samples.labels.dtype),
-                )
-            )
-        # This can be really slow
-        # state['data'] = np.vstack((state['data'], data))
-        # state['raw_data'] = np.vstack((state['raw_data'], raw_data))
-        # state['labels'] = np.hstack((state['labels'], labels))
+        state["t_rewards"][rule] += samples.rewards.sum()
 
     ##
 
@@ -352,7 +262,7 @@ class NewLimeBaseBeam:
             # Update the state.
             NewLimeBaseBeam.update_state(state, rule, n, samples)
 
-        return int(samples.labels.sum())
+        return int(samples.rewards.sum())
 
     ##
 
@@ -545,7 +455,7 @@ class NewLimeBaseBeam:
             of the rule
         """
 
-        mean = state["t_positives"][rule] / state["t_nsamples"][rule]
+        mean = state["t_rewards"][rule] / state["t_nsamples"][rule]
         lb = AnchorBaseBeam.dlow_bernoulli(
             mean, beta / state["t_nsamples"][rule]
         )
@@ -674,20 +584,11 @@ class NewLimeBaseBeam:
         coverage_data = samples.data
 
         prealloc_size = hyper_param.batch_size * 10000
-        current_idx = 0
         data = np.zeros(
             (prealloc_size, samples.raw_data.shape[1]), coverage_data.dtype
         )
-        raw_data = np.zeros(
-            (prealloc_size, samples.raw_data.shape[1]), samples.raw_data.dtype
-        )
-        labels = np.zeros(prealloc_size, samples.labels.dtype)
 
         n_features = data.shape[1]
-
-        # dictionary of set of indexes to the samples generated under the rule
-        t_idx: dict[Rule, set]
-        t_idx = collections.defaultdict(set)
 
         # dictionary of the number of the samples generated under the rule
         t_nsamples: dict[Rule, int]
@@ -695,35 +596,83 @@ class NewLimeBaseBeam:
 
         # dictionary of the number of the positive samples generated under the
         # rule
-        t_positives: dict[Rule, int]
-        t_positives = collections.defaultdict(int)
-
-        # dictionary of set of indexes to the coverage samples generated under
-        # the rule
-        t_coverage_idx: dict[Rule, set]
-        t_coverage_idx = collections.defaultdict(set)
+        t_rewards: dict[Rule, int]
+        t_rewards = collections.defaultdict(int)
 
         # dictionary of the coverages of the rules
         t_coverage: dict[Rule, float]
         t_coverage = collections.defaultdict(float)
 
         return {
-            "t_idx": t_idx,
             "t_nsamples": t_nsamples,
-            "t_positives": t_positives,
-            "data": data,
-            "prealloc_size": prealloc_size,
-            "raw_data": raw_data,
-            "labels": labels,
-            "current_idx": current_idx,
+            "t_rewards": t_rewards,
             "n_features": n_features,
-            "t_coverage_idx": t_coverage_idx,
             "t_coverage": t_coverage,
             "coverage_data": coverage_data,
             "t_order": collections.defaultdict(list),
         }
 
     ##
+
+    @staticmethod
+    def get_anchor_from_tuple(t: Rule, state: State) -> Anchor:
+        """Get anchor from tuple"""
+
+        # TODO: This is wrong, some of the intermediate anchors may not exist.
+        anchor: Anchor = {
+            "feature": [],
+            "mean": [],
+            "precision": [],
+            "coverage": [],
+        }
+
+        def normalize_tuple(x: tuple[int, ...]) -> tuple[int, ...]:
+            """Normalize tuple
+
+            Parameters
+            ----------
+            x: tuple
+                The tuple to normalize
+
+            Returns
+            -------
+            tuple
+                The normalized tuple
+            """
+            return tuple(sorted(set(x)))
+
+        to_remove = list(t)
+        current_t = t
+        while to_remove:
+            best = -1
+            best_nsamples = -1
+            best_tuple: Rule = ()
+            for x in to_remove:
+                set_nt = set(current_t)
+                set_nt.remove(x)
+                nt = tuple(set_nt)
+                # nt = normalize_tuple(current_t + x)
+                n_samples = state["t_nsamples"][nt]
+                if n_samples > best_nsamples:
+                    best_nsamples = n_samples
+                    best = x
+                    best_tuple = nt
+            to_remove.remove(best)
+            current_t = normalize_tuple(best_tuple + (best,))
+            # This is a hack, and I don't know why I would need it.
+            if state["t_nsamples"][current_t] == 0:
+                best_mean = state["t_rewards"][t] / state["t_nsamples"][t]
+            else:
+                best_mean = (
+                    state["t_rewards"][current_t]
+                    / state["t_nsamples"][current_t]
+                )
+            anchor["feature"].insert(0, best)
+            anchor["mean"].insert(0, best_mean)
+            anchor["precision"].insert(0, best_mean)
+            anchor["coverage"].insert(0, state["t_coverage"][current_t])
+            current_t = best_tuple
+        return anchor
 
     @staticmethod
     def beam_search(
@@ -768,7 +717,7 @@ class NewLimeBaseBeam:
             # -----------------------------------------------------------------
             # Call 'GenerateCands' and get new candidate rules.
             cands: list[Rule]
-            cands = NewLimeBaseBeam.generate_cands(prev_best_b_cands, state)
+            cands = NewLimeBaseBeam.make_tuples(prev_best_b_cands, state)
             # -----------------------------------------------------------------
 
             # list of indexes of the B best rules of candidate rules
@@ -836,7 +785,7 @@ class NewLimeBaseBeam:
             return None
 
         return (
-            AnchorBaseBeam.get_anchor_from_tuple(best_rule.rule, state),
+            NewLimeBaseBeam.get_anchor_from_tuple(best_rule.rule, state),
             best_rule.model,
         )
 
