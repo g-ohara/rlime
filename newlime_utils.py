@@ -210,8 +210,10 @@ def get_trg_sample(
 
 def plot_weights(
     weights: list[float],
+    names: list[str],
+    precision: float,
+    coverage: float,
     feature_names: list[str],
-    anchor_exp: anchor_explanation.AnchorExplanation | None = None,
     img_name: str | None = None,
 ) -> None:
     """Plot the weights of the surrogate model.
@@ -259,14 +261,13 @@ def plot_weights(
             multiline_names.append(" AND ".join(names[max_i * 3 :]))
         return " AND \n".join(multiline_names)
 
-    if anchor_exp is not None:
-        anchor_str = concat_names(anchor_exp.names())
-        if anchor_str is not None:
-            plt.title(
-                f"{anchor_str}\n"
-                f"with Precision {anchor_exp.precision():.3f} "
-                f"and Coverage {anchor_exp.coverage():.3f}"
-            )
+    anchor_str = concat_names(names)
+    if anchor_str is not None:
+        plt.title(
+            f"{anchor_str}\n"
+            f"with Precision {precision:.3f} "
+            f"and Coverage {coverage:.3f}"
+        )
 
     for f, v in zip(sorted_features, sorted_values):
         plt.text(v, f, round(v, 5))

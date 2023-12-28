@@ -4,18 +4,18 @@ This module implements NewLIME explainer for tabular datasets.
 """
 
 import dataclasses
+from typing import Callable
 
 import numpy as np
 import pandas as pd
-from anchor import anchor_explanation, anchor_tabular
+from anchor import anchor_tabular
 from river import compose
 
 import newlime_base
-from newlime_base import (Anchor, Classifier, HyperParam, NewLimeBaseBeam,
-                          SampleFn, Samples)
+from newlime_base import Arm, HyperParam, NewLimeBaseBeam, SampleFn, Samples
 
-Predicate = tuple[int, str, int]
-Mapping = dict[int, Predicate]
+Classifier = Callable[[np.ndarray], np.ndarray]
+Mapping = dict[int, tuple[int, str, int]]
 
 
 @dataclasses.dataclass
@@ -310,15 +310,77 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
 
         return sample_fn, mapping
 
+    def my_add_names_to_exp(
+        self, arm: Arm, mapping: Mapping
+    ) -> tuple[list[str], list[int]]:
+        names = []
+        feature = [mapping[idx][0] for idx in arm.rule]
+
+        def get_ordinal_ranges(arm: Arm) -> dict[int, list[float]]:
+            ordinal_ranges = {}
+            for idx in arm.rule:
+                f, op, v = mapping[idx]
+                if op in ("geq", "leq"):
+                    if f not in ordinal_ranges:
+                        ordinal_ranges[f] = [float("-inf"), float("inf")]
+                if op == "geq":
+                    ordinal_ranges[f][0] = max(ordinal_ranges[f][0], v)
+                if op == "leq":
+                    ordinal_ranges[f][1] = min(ordinal_ranges[f][1], v)
+            return ordinal_ranges
+
+        ordinal_ranges = get_ordinal_ranges(arm)
+        handled = set()
+        for idx in arm.rule:
+            f, op, v = mapping[idx]
+            # v = data_row[f]
+            if op == "eq":
+                fname = f"{self.feature_names[f]} = "
+                if f in self.categorical_names:
+                    v = int(v)
+                    if (
+                        "<" in self.categorical_names[f][v]
+                        or ">" in self.categorical_names[f][v]
+                    ):
+                        fname = ""
+                    fname = f"{fname}{self.categorical_names[f][v]}"
+                else:
+                    fname = f"{fname}{v:.2f}"
+            else:
+                if f in handled:
+                    continue
+                geq, leq = ordinal_ranges[f]
+                fname = ""
+                geq_val = ""
+                leq_val = ""
+                if geq > float("-inf"):
+                    name = self.categorical_names[f][geq + 1]
+                    if "<" in name:
+                        geq_val = name.split()[0]
+                    elif ">" in name:
+                        geq_val = name.split()[-1]
+                if leq < float("inf"):
+                    name = self.categorical_names[f][leq]
+                    if leq == 0:
+                        leq_val = name.split()[-1]
+                    elif "<" in name:
+                        leq_val = name.split()[-1]
+                if leq_val and geq_val:
+                    fname = f"{geq_val} < {self.feature_names[f]} <= {leq_val}"
+                elif leq_val:
+                    fname = f"{self.feature_names[f]} <= {leq_val}"
+                elif geq_val:
+                    fname = f"{self.feature_names[f]} > {geq_val}"
+                handled.add(f)
+            names.append(fname)
+        return names, feature
+
     def my_explain_instance(
         self,
         data_row: np.ndarray,
         classifier_fn: Classifier,
         hyper_param: HyperParam,
-    ) -> (
-        tuple[anchor_explanation.AnchorExplanation, compose.Pipeline | None]
-        | None
-    ):
+    ) -> tuple[list[str], list[int], Arm] | None:
         """Generate NewLIME explanation for given classifier on neighborhood of
         given data point.
 
@@ -341,22 +403,11 @@ class NewLimeTabularExplainer(anchor_tabular.AnchorTabularExplainer):
         # It's possible to pass in max_anchor_size
         sample_fn, mapping = self.get_sample_fn(data_row, classifier_fn)
 
-        # *********************************************************************
         # Generate Explanation
-        result: tuple[Anchor, compose.Pipeline | None] | None
-        result = NewLimeBaseBeam.beam_search(sample_fn, hyper_param)
-        # *********************************************************************
-
-        if result is None:
+        arm: Arm | None
+        arm = NewLimeBaseBeam.beam_search(sample_fn, hyper_param)
+        if arm is None:
             return None
 
-        exp, surrogate_model = result
-        self.add_names_to_exp(data_row, exp, mapping)
-        exp["instance"] = data_row
-        exp["prediction"] = classifier_fn(
-            self.encoder_fn(data_row.reshape(1, -1))
-        )[0]
-        explanation = anchor_explanation.AnchorExplanation(
-            "tabular", exp, self.as_html
-        )
-        return explanation, surrogate_model
+        names, feature = self.my_add_names_to_exp(arm, mapping)
+        return names, feature, arm

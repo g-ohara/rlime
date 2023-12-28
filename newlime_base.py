@@ -9,20 +9,12 @@ AnchorBaseBeam uses the original model to calculate the precision of the
 rules.
 """
 
-from __future__ import print_function
-
-import collections
-import copy
 import dataclasses
-import functools
-from typing import Any, Callable
+from typing import Callable
 
 import numpy as np
 from anchor.anchor_base import AnchorBaseBeam
 from river import compose, linear_model, preprocessing
-
-Rule = tuple[int, ...]
-Classifier = Callable[[np.ndarray], np.ndarray]
 
 
 @dataclasses.dataclass
@@ -46,89 +38,66 @@ class Samples:
     rewards: np.ndarray
 
 
+Rule = tuple[int, ...]
 SampleFn = Callable[[int, Rule, bool, compose.Pipeline | None, bool], Samples]
-CompleteSampleFn = Callable[[int, bool], float]
-State = dict[str, Any]
-Anchor = dict[str, Any]
 
 
-@dataclasses.dataclass
-class RuleClass:
-    """This is the class for a rule, model learned under that rule,
-    precision of that model and coverage of that rule.
+class Arm:
+    """This is a class for an arm in multi-armed bandit problem.
 
     Attributes
     ----------
-        rule: The rule
-        model: The model learned under that rule
-        precision: The precision of that model
-        coverage: The coverage of that rule
-    """
-
+    n_samples: int
+        The number of samples generated under the arm
+    n_rewards: int
+        The number of samples that the surrogate model predicts the same label
+        as the black box model
     rule: Rule
-    model: compose.Pipeline | None
-    precision: float | None
+        The rule under which the perturbed vectors are sampled
+    surrogate_model: Pipeline
+        The surrogate model
+    sample_fn: SampleFn
+        The function that samples perturbed vectors under the rule
     coverage: float
-
-
-@dataclasses.dataclass
-class HyperParam:  # pylint: disable=too-many-instance-attributes
-    """Hyper parameters for beam search of best anchor
-
-    Attributes:
-        delta: The delta parameter in LUCB
-        epsilon: The epsilon parameter in LUCB
-        epsilon_stop: The epsilon_stop parameter in LUCB
-        beam_size: The beam_size parameter in LUCB
-        batch_size: The batch_size parameter in LUCB
-        desired_confidence: The tau parameter in LUCB
-        coverage_samples_num: The number of samples to calculate coverage
-        max_rule_length: The maximum length of the rule
+        The coverage of the rule
     """
 
-    delta: float = 0.05
-    epsilon: float = 0.1
-    epsilon_stop: float = 0.05
-    beam_size: int = 10
-    batch_size: int = 10
-    init_sample_num: int = 1000
-    desired_confidence: float = 0.95  # tau
-    coverage_samples_num: int = 10000
-    max_rule_length: int | None = None
+    def __init__(
+        self, rule: Rule, sample_fn: SampleFn, coverage_data: np.ndarray
+    ) -> None:
+        """Initialize the class Arm
 
+        Parameters
+        ----------
+        rule: Rule
+            The rule under which the perturbed vectors are sampled
+        sample_fn: SampleFn
+            The function that samples perturbed vectors under the rule
+        coverage_data: np.ndarray
+            The data for calculating coverage of the rules
+        """
 
-class NewLimeBaseBeam:
-    """This is a class for beam search of best anchor.
+        self.rule = rule
+        self.surrogate_model = Arm.init_surrogate_model()
+        self.sample_fn = sample_fn
+        self.n_samples = 0
+        self.n_rewards = 0
+        covered = Arm.count_covered_samples(self.rule, coverage_data)
+        self.coverage = covered / coverage_data.shape[0]
 
-    Attributes
-    ----------
-    None
+    @staticmethod
+    def init_surrogate_model() -> compose.Pipeline:
+        """Initialize online linear model and returns it
 
-    Methods
-    -------
-    update_state(state, rule, batch_size, sample)
-        Update state after sampling
-    complete_sample_fn(sample_fn, rule, n, model, state)
-        Sample perturbed vectors, update state and returns the reward
-    init_surrogate_models(num_models)
-        Initialize online linear models and returns them
-    get_sample_fns(sample_fn, tuples, surrogate_models, state)
-        Return function that samples, updates model and returns sample
-    get_initial_statistics(tuples)
-        Returns statistics to pass to AnchorBaseBeam.lucb
-    b_best_cands(cands, sample_fn, hyper_param, state)
-        Search for B candidates with highest precision
-    update_confidence_bound(rule, beta, state)
-        Update confidence bound of the precision of the rule based on state
-    largest_valid_cand(
-        b_best_cands, hyper_param, state, sample_fns, surrogate_models
-    )
-        Search the valid candidate with highest coverage.
-    init_state(sample_fn, hyper_param)
-        Initialize state before starting beam search
-    beam_search(sample_fn, hyper_param)
-        Beam search for optimal rule and model
-    """
+        Returns
+        -------
+        Pipeline
+            The initialized model
+        """
+        preprocessor = preprocessing.StandardScaler()
+        model = linear_model.LogisticRegression()
+        pipeline = compose.Pipeline(preprocessor, model)
+        return pipeline
 
     @staticmethod
     def count_covered_samples(rule: Rule, samples: np.ndarray) -> int:
@@ -136,7 +105,7 @@ class NewLimeBaseBeam:
 
         Parameters
         ----------
-        rule: tuple
+        rule: Rule
             The rule under which the perturbed vectors are sampled
         samples: np.ndarray
             The perturbed vectors
@@ -148,25 +117,95 @@ class NewLimeBaseBeam:
         """
         return sum(all(sample[i] == 1 for i in rule) for sample in samples)
 
+    def sample(self, n: int) -> int:
+        """Sample perturbed vectors under the arm and update the arm
+
+        Parameters
+        ----------
+        n: int
+            The number of perturbed vectors sampled
+
+        Returns
+        -------
+        int
+            The number of perturbed vectors that the surrogate model
+            predicts the same label as the black box model
+        """
+        samples: Samples
+        samples = self.sample_fn(
+            n, self.rule, True, self.surrogate_model, True
+        )
+        self.n_samples += n
+        self.n_rewards += samples.rewards.sum()
+        return int(samples.rewards.sum())
+
+
+@dataclasses.dataclass
+class HyperParam:  # pylint: disable=too-many-instance-attributes
+    """Hyper parameters for beam search of best anchor
+
+    Attributes
+    ----------
+    tau: float
+        The threshold of precision of the rules
+    delta: float
+        The critical ratio for LUCB
+    epsilon: float
+        The allowable error for LUCB
+    epsilon_stop: float
+        The allowable error for searching valid rules in largest_valid_cand
+    beam_size: int
+        The number of candidate rules to be considered at each step
+    batch_size: int
+        The number of perturbed vectors generated at each step
+    init_sample_num: int
+        The number of initial samples for LUCB
+    coverage_samples_num: int
+        The number of samples generated for calculating coverage of the rules
+    max_rule_length: int | None
+        The maximum length of the rule (if None, it is set to the number of
+        features)
+    """
+
+    tau: float = 0.80
+    delta: float = 0.05
+    epsilon: float = 0.05
+    epsilon_stop: float = 0.05
+    beam_size: int = 10
+    batch_size: int = 10
+    init_sample_num: int = 1000
+    coverage_samples_num: int = 10000
+    max_rule_length: int | None = None
+
+
+class NewLimeBaseBeam:
+    """This is a class for beam search of best anchor."""
+
     @staticmethod
-    def make_tuples(previous_best: list[Rule], state: State) -> list[Rule]:
+    def make_tuples(
+        previous_best: list[Rule],
+        sample_fn: SampleFn,
+        n_features: int,
+        coverage_data: np.ndarray,
+    ) -> list[Arm]:
         """Generate candidate rules.
 
         Parameters
         ----------
         previous_best: list
             The list of the B best rules of the previous iteration
-        state: State
-            The state of the beam search
+        sample_fn: SampleFn
+            The function that samples perturbed vectors under the rule
+        n_features: int
+            The number of features
+        coverage_data: np.ndarray
+            The data for calculating coverage of the rules
 
         Returns
         -------
-        list[rule]
-            The list of candidate rules
+        list[Arm]
+            The list of the candidate rules
         """
-
-        all_features = range(state["n_features"])
-        coverage_data = state["coverage_data"]
 
         # Generate new candidates.
         new_cands: list[Rule]
@@ -174,7 +213,7 @@ class NewLimeBaseBeam:
             new_cands = [()]
         else:
             set_tuples = set()
-            for f in all_features:
+            for f in range(n_features):
                 for t in previous_best:
                     new_t = tuple(sorted(set(t + (f,))))
                     if len(new_t) != len(t) + 1:
@@ -184,269 +223,113 @@ class NewLimeBaseBeam:
 
         # Initialize the number of samples, the number of positive samples and
         # the coverage of the rules.
-        for x in new_cands:
-            state["t_nsamples"][x] = 0
-            state["t_rewards"][x] = 0
-            covered = NewLimeBaseBeam.count_covered_samples(x, coverage_data)
-            state["t_coverage"][x] = covered / coverage_data.shape[0]
-
-        return list(new_cands)
+        return [Arm(t, sample_fn, coverage_data) for t in new_cands]
 
     @staticmethod
-    def update_state(
-        state: State, rule: Rule, batch_size: int, samples: Samples
-    ) -> None:
-        """Update state after sampling
+    def lucb(cands: list[Arm], hyper_param: HyperParam) -> list[int]:
+        """Search for B candidates with highest precision using LUCB algorithm
 
         Parameters
         ----------
-        state: State
-            The state of the beam search
-        rule: tuple
-            The rule under which the perturbed vectors are sampled
-        batch_size: int
-            The number of perturbed vectors sampled
-        samples: Samples
-            The sampled perturbed vectors
-        """
-
-        assert len(samples.raw_data) == batch_size
-
-        # Do not update the state if no samples are generated
-        if len(samples.raw_data) == 0:
-            return
-
-        state["t_nsamples"][rule] += batch_size
-        state["t_rewards"][rule] += samples.rewards.sum()
-
-    ##
-
-    @staticmethod
-    def complete_sample_fn(
-        n: int,
-        update_state: bool,
-        sample_fn: SampleFn,
-        rule: Rule,
-        model: compose.Pipeline | None,
-        state: State,
-    ) -> int:
-        """Sample perturbed vectors, update state and returns the reward
-
-        Parameters
-        ----------
-        sample_fn: SampleFn
-            The function that ONLY samples perturbed vectors.
-            It does NOT update the surrogate model.
-        rule: tuple
-            The rule under which the perturbed vectors are sampled
-        n: int
-            The number of perturbed vectors sampled
-        model: Pipeline
-            The model learned under the rule
-        state: State
-            The state of the beam search
+        cands: list[Arm]
+            The list of arms
+        hyper_param: HyperParam
+            The hyper parameters for beam search
 
         Returns
         -------
-        float
-            The reward
+        list[int]
+            The list of indexes of the B best arms
         """
 
-        # *****************************************************************
-        # Take a sample satisfying the tuple t.
-        samples: Samples
-        samples = sample_fn(n, rule, True, model, True)
-        # *****************************************************************
+        n_cands = len(cands)
+        means = [0.5] * n_cands
+        ub = np.array([1.0] * n_cands)
+        lb = np.array([0.0] * n_cands)
+        for cand in cands:
+            cand.sample(hyper_param.init_sample_num)
 
-        if update_state:
-            # Update the state.
-            NewLimeBaseBeam.update_state(state, rule, n, samples)
+        top_n = min(hyper_param.beam_size, n_cands)
+        if top_n >= n_cands:
+            return list(range(n_cands))
 
-        return int(samples.rewards.sum())
+        def update_bounds(t: int) -> tuple[int, int]:
+            sorted_means = np.argsort(means)
+            beta = AnchorBaseBeam.compute_beta(n_cands, t, hyper_param.delta)
+            j = sorted_means[-top_n:]
+            not_j = sorted_means[:-top_n]
+            for f in not_j:
+                ub[f] = AnchorBaseBeam.dup_bernoulli(
+                    means[f], beta / cands[f].n_samples
+                )
+            for f in j:
+                lb[f] = AnchorBaseBeam.dlow_bernoulli(
+                    means[f], beta / cands[f].n_samples
+                )
+            ut = not_j[np.argmax(ub[not_j])]
+            lt = j[np.argmin(lb[j])]
+            return ut, lt
 
-    ##
-
-    @staticmethod
-    def init_surrogate_models(num_models: int) -> list[compose.Pipeline]:
-        """Initialize online linear models and returns them
-
-        Parameters
-        ----------
-        num_models: int
-            The number of models to initialize
-
-        Returns
-        -------
-        list
-            The list of initialized models
-        """
-        models: list[compose.Pipeline] = []
-        for _ in range(num_models):
-            preprocessor = preprocessing.StandardScaler()
-            model = linear_model.LogisticRegression()
-            pipeline = compose.Pipeline(preprocessor, model)
-            models.append(pipeline)
-        return models
-
-    ##
-
-    @staticmethod
-    def get_sample_fns(
-        sample_fn: SampleFn,
-        tuples: list[Rule],
-        surrogate_models: list[compose.Pipeline],
-        state: State,
-    ) -> list[CompleteSampleFn]:
-        """Return function that samples, updates model and returns sample
-
-        Parameters
-        ----------
-        sample_fn: Callable
-            The function that samples perturbed vectors, updates the
-            surrogate model and returns the reward
-        tuples: list
-            The list of rules
-        surrogate_models: list
-            The list of surrogate models
-        state: dict
-            The state of the beam search
-
-        Returns
-        -------
-        list[CompleteSampleFn]
-            The list of functions that sample, update model and return sample
-        """
-        # each sample fn returns number of instances that the surrogate model
-        # classified correctly
-        sample_fns: list[CompleteSampleFn] = []
-
-        for rule, model in zip(tuples, surrogate_models):
-            partial_fn = functools.partial(
-                NewLimeBaseBeam.complete_sample_fn,
-                sample_fn=sample_fn,
-                rule=rule,
-                model=model,
-                state=state,
-            )
-            sample_fns.append(partial_fn)
-
-        def wrap(fn: CompleteSampleFn) -> CompleteSampleFn:
-            def wrapped_fn(n: int, update_state: bool = True) -> float:
-                return fn(n, update_state)
-
-            return wrapped_fn
-
-        # wrap the partial functions to set the default value of the argument
-        # 'update_state' to True
-        return list(map(wrap, sample_fns))
+        t = 1
+        ut, lt = update_bounds(t)
+        while ub[ut] - lb[lt] > hyper_param.epsilon:
+            ut_arm = cands[ut]
+            ut_arm.sample(hyper_param.batch_size)
+            means[ut] = ut_arm.n_rewards / ut_arm.n_samples
+            lt_arm = cands[lt]
+            lt_arm.sample(hyper_param.batch_size)
+            means[lt] = lt_arm.n_rewards / lt_arm.n_samples
+            t += 1
+            ut, lt = update_bounds(t)
+        sorted_means = np.argsort(means)
+        return list(sorted_means[-top_n:])  # return top_n best indexes
 
     @staticmethod
-    def get_initial_statistics(tuples: list[Rule]) -> dict[str, np.ndarray]:
-        """Returns statistics to pass to AnchorBaseBeam.lucb
-
-        Parameters
-        ----------
-        tuples: list
-            The list of rules
-
-        Returns
-        -------
-        dict
-            The dictionary of statistics
-        """
-        stats = {
-            "n_samples": np.zeros(len(tuples)),
-            "positives": np.zeros(len(tuples)),
-        }
-        return stats
-
-    @staticmethod
-    def b_best_cands(
-        cands: list[Rule],
-        sample_fn: SampleFn,
-        hyper_param: HyperParam,
-        state: State,
-    ) -> tuple[
-        list[int], list[Rule], list[CompleteSampleFn], list[compose.Pipeline]
-    ]:
+    def b_best_cands(cands: list[Arm], hyper_param: HyperParam) -> list[Arm]:
         """Search for B candidates with highest precision
 
         Parameters
         ----------
-        cands: list
-            The list of candidate rules
-        sample_fn: Callable
-            The function that samples perturbed vectors
+        cands: list[Arm]
+            The list of arms
         hyper_param: HyperParam
-            The hyper parameters for beam search of best anchor
-        state: dict
-            The state of the beam search
+            The hyper parameters for beam search
 
         Returns
         -------
-        tuple[list[int], list[Rule], list[CompleteSampleFn], list[Pipeline]]
-            The tuple of indexes of the B best rules, the list of the B best
-            rules, the list of functions that sample, update model and return
-            sample, the list of surrogate models
+        list[Arm]
+            The list of the B best arms
         """
 
-        # Initialize the surrogate models under each rule
-        # thus the list has the same length as 'tuples'
-        surrogate_models: list[compose.Pipeline]
-        surrogate_models = NewLimeBaseBeam.init_surrogate_models(len(cands))
-
-        # Get sampling functions to sample perturbed vectors under each rule
-        # thus the list has the same length as 'tuples'
-        sample_fns: list[CompleteSampleFn]
-        sample_fns = NewLimeBaseBeam.get_sample_fns(
-            sample_fn, cands, surrogate_models, state
-        )
-
-        # Learn surrogate models under each rule with initial samples without
-        # updating the state
-        for fn in sample_fns:
-            fn(hyper_param.init_sample_num, False)
-
-        # Get initial statistics
-        initial_stats = NewLimeBaseBeam.get_initial_statistics(cands)
+        # # Learn surrogate models under each rule with initial samples without
+        # # updating the state
+        # for fn in sample_fns:
+        #     fn(hyper_param.init_sample_num, False)
 
         # list of the indexes to B candidate rules with the highest precision
         b_best_idxes: list[int]
-        b_best_idxes = list(
-            AnchorBaseBeam.lucb(
-                sample_fns,
-                initial_stats,
-                hyper_param.epsilon,
-                hyper_param.delta,
-                hyper_param.batch_size,
-                min(hyper_param.beam_size, len(cands)),
-            )
-        )
+        b_best_idxes = list(NewLimeBaseBeam.lucb(cands, hyper_param))
 
         # list of the B candidate rules with the highest precision
         # thus it has the same length as b_best_idxes
-        b_best_cands: list[Rule]
+        b_best_cands: list[Arm]
         b_best_cands = [cands[i] for i in b_best_idxes]
 
         # Get candidates from their indexes
-        return b_best_idxes, b_best_cands, sample_fns, surrogate_models
-
-    ##
+        return b_best_cands
 
     @staticmethod
     def update_confidence_bound(
-        rule: Rule, beta: float, state: State
+        arm: Arm, beta: float
     ) -> tuple[float, float, float]:
-        """Update confidence bound of the precision of the rule based on state
+        """Update confidence bound of the precision of the rule
 
         Parameters
         ----------
-        rule: tuple
-            The rule under which the perturbed vectors are sampled
+        arm: Arm
+            The arm
         beta: float
             The beta parameter in LUCB
-        state: State
-            The state of the beam search
 
         Returns
         -------
@@ -455,26 +338,18 @@ class NewLimeBaseBeam:
             of the rule
         """
 
-        mean = state["t_rewards"][rule] / state["t_nsamples"][rule]
-        lb = AnchorBaseBeam.dlow_bernoulli(
-            mean, beta / state["t_nsamples"][rule]
-        )
-        ub = AnchorBaseBeam.dup_bernoulli(
-            mean, beta / state["t_nsamples"][rule]
-        )
+        mean = arm.n_rewards / arm.n_samples
+        lb = AnchorBaseBeam.dlow_bernoulli(mean, beta / arm.n_samples)
+        ub = AnchorBaseBeam.dup_bernoulli(mean, beta / arm.n_samples)
 
         return mean, lb, ub
 
-    ##
-
     @staticmethod
     def largest_valid_cand(
-        b_best_cands: list[tuple[int, Rule]],
+        b_best_cands: list[Arm],
         hyper_param: HyperParam,
-        state: State,
-        sample_fns: list[CompleteSampleFn],
-        surrogate_models: list[compose.Pipeline],
-    ) -> RuleClass | None:
+        n_features: int,
+    ) -> Arm | None:
         """Search the valid candidate with highest coverage. Return None if no
         valid candidates found.
 
@@ -484,28 +359,17 @@ class NewLimeBaseBeam:
             The list of the B best rules
         hyper_param: HyperParam
             The hyper parameters for beam search of best anchor
-        state: State
-            The state of the beam search
-        sample_fns: list
-            The list of functions that sample, update model and return sample
-        surrogate_models: list
-            The list of surrogate models
 
         Returns
         -------
-        RuleClass
+        Arm
             The rule with the highest coverage of the rules with higher
             precision than tau in the B best rules
         """
 
-        best_cand: RuleClass | None
-        best_cand = None
+        best_cand: Arm | None = None
 
-        n_features = state["n_features"]
-
-        # t --- a tuple in best candidates
-        # i --- an INDEX to the tuple t
-        for i, t in b_best_cands:
+        for cand in b_best_cands:
             # I can choose at most (beam_size - 1) tuples at each step,
             # and there are at most n_feature steps
             beta = np.log(
@@ -517,167 +381,38 @@ class NewLimeBaseBeam:
             )
 
             # Update confidence interval and coverage of the tuple t.
-            mean, lb, ub = NewLimeBaseBeam.update_confidence_bound(
-                t, beta, state
-            )
-            coverage = state["t_coverage"][t]
+            mean, lb, ub = NewLimeBaseBeam.update_confidence_bound(cand, beta)
 
-            # Judge whether the tuple t is an anchor or not.
+            # Judge whether the rule is valid or not.
             while (
-                mean >= hyper_param.desired_confidence
-                and lb
-                < hyper_param.desired_confidence - hyper_param.epsilon_stop
-            ) or (
-                mean < hyper_param.desired_confidence
-                and ub
-                >= hyper_param.desired_confidence + hyper_param.epsilon_stop
+                mean >= hyper_param.tau
+                and lb < hyper_param.tau - hyper_param.epsilon_stop
+                or mean < hyper_param.tau
+                and ub >= hyper_param.tau + hyper_param.epsilon_stop
             ):
-                sample_fns[i](hyper_param.batch_size, True)
+                # If it is not clear whether the rule is valid or not,
+                # sample more perturbed vectors and update the confidence
+                # interval and coverage of the rule.
+                cand.sample(hyper_param.batch_size)
                 mean, lb, ub = NewLimeBaseBeam.update_confidence_bound(
-                    t, beta, state
+                    cand, beta
                 )
-            ##
 
             # If the tuple t is the anchor with the provisionally best
             # coverage, update 'best_tuple' and 'best_model'.
             if (
-                mean >= hyper_param.desired_confidence
-                and lb
-                > hyper_param.desired_confidence - hyper_param.epsilon_stop
+                mean >= hyper_param.tau
+                and lb > hyper_param.tau - hyper_param.epsilon_stop
             ):
-                if best_cand is None or coverage > best_cand.coverage:
-                    best_cand = RuleClass(
-                        t, copy.deepcopy(surrogate_models[i]), None, coverage
-                    )
-                    # if best_cand.coverage == 1 or stop_on_first:
-                    #     stop_this = True
-            ##
-        ##
+                if best_cand is None or cand.coverage > best_cand.coverage:
+                    best_cand = cand
+
         return best_cand
-
-    ##
-
-    @staticmethod
-    def init_state(sample_fn: SampleFn, hyper_param: HyperParam) -> State:
-        """Initialize state before starting beam search
-
-        Parameters
-        ----------
-        sample_fn: Callable
-            The function that samples perturbed vectors
-        hyper_param: HyperParam
-            The hyper parameters for beam search of best anchor
-
-        Returns
-        -------
-        dict
-            The state of the beam search
-        """
-
-        samples: Samples
-        samples = sample_fn(
-            hyper_param.coverage_samples_num, (), False, None, False
-        )
-
-        # data for calculating coverage of the rules
-        coverage_data: np.ndarray
-        coverage_data = samples.data
-
-        prealloc_size = hyper_param.batch_size * 10000
-        data = np.zeros(
-            (prealloc_size, samples.raw_data.shape[1]), coverage_data.dtype
-        )
-
-        n_features = data.shape[1]
-
-        # dictionary of the number of the samples generated under the rule
-        t_nsamples: dict[Rule, int]
-        t_nsamples = collections.defaultdict(int)
-
-        # dictionary of the number of the positive samples generated under the
-        # rule
-        t_rewards: dict[Rule, int]
-        t_rewards = collections.defaultdict(int)
-
-        # dictionary of the coverages of the rules
-        t_coverage: dict[Rule, float]
-        t_coverage = collections.defaultdict(float)
-
-        return {
-            "t_nsamples": t_nsamples,
-            "t_rewards": t_rewards,
-            "n_features": n_features,
-            "t_coverage": t_coverage,
-            "coverage_data": coverage_data,
-            "t_order": collections.defaultdict(list),
-        }
-
-    ##
-
-    @staticmethod
-    def get_anchor_from_tuple(t: Rule, state: State) -> Anchor:
-        """Get anchor from tuple"""
-
-        # TODO: This is wrong, some of the intermediate anchors may not exist.
-        anchor: Anchor = {
-            "feature": [],
-            "mean": [],
-            "precision": [],
-            "coverage": [],
-        }
-
-        def normalize_tuple(x: tuple[int, ...]) -> tuple[int, ...]:
-            """Normalize tuple
-
-            Parameters
-            ----------
-            x: tuple
-                The tuple to normalize
-
-            Returns
-            -------
-            tuple
-                The normalized tuple
-            """
-            return tuple(sorted(set(x)))
-
-        to_remove = list(t)
-        current_t = t
-        while to_remove:
-            best = -1
-            best_nsamples = -1
-            best_tuple: Rule = ()
-            for x in to_remove:
-                set_nt = set(current_t)
-                set_nt.remove(x)
-                nt = tuple(set_nt)
-                # nt = normalize_tuple(current_t + x)
-                n_samples = state["t_nsamples"][nt]
-                if n_samples > best_nsamples:
-                    best_nsamples = n_samples
-                    best = x
-                    best_tuple = nt
-            to_remove.remove(best)
-            current_t = normalize_tuple(best_tuple + (best,))
-            # This is a hack, and I don't know why I would need it.
-            if state["t_nsamples"][current_t] == 0:
-                best_mean = state["t_rewards"][t] / state["t_nsamples"][t]
-            else:
-                best_mean = (
-                    state["t_rewards"][current_t]
-                    / state["t_nsamples"][current_t]
-                )
-            anchor["feature"].insert(0, best)
-            anchor["mean"].insert(0, best_mean)
-            anchor["precision"].insert(0, best_mean)
-            anchor["coverage"].insert(0, state["t_coverage"][current_t])
-            current_t = best_tuple
-        return anchor
 
     @staticmethod
     def beam_search(
         sample_fn: SampleFn, hyper_param: HyperParam
-    ) -> tuple[Anchor, compose.Pipeline | None] | None:
+    ) -> Arm | None:
         """Beam search for optimal rule and model
 
         Parameters
@@ -689,66 +424,52 @@ class NewLimeBaseBeam:
 
         Returns
         -------
-        tuple[Anchor, Pipeline | None] | None
-            The tuple of the anchor and the model learned under the anchor
-            (if it exists, None otherwise)
+        Arm | None
+            The rule with the highest coverage of the rules with higher
+            precision than tau in the B best rules
         """
 
-        state: State
-        state = NewLimeBaseBeam.init_state(sample_fn, hyper_param)
+        # Generate initial samples to calculate coverage of the rules
+        samples: Samples
+        samples = sample_fn(
+            hyper_param.coverage_samples_num, (), False, None, False
+        )
+        coverage_data: np.ndarray
+        coverage_data = samples.data
+        n_features = coverage_data.shape[1]
 
         # the rule with the highest coverage of the rules with higher
         # precision than tau in the B best rules
-        best_rule: RuleClass | None
-        best_rule = None
+        best_arm: Arm | None = None
 
-        prev_best_b_cands: list[Rule]
+        prev_best_b_cands: list[Arm]
         prev_best_b_cands = []
 
         current_size = 0
 
-        best_of_size: dict[int, list[Rule]] = {}
+        best_of_size: dict[int, list[Arm]] = {}
 
         # Set maximum length of the rule
         if hyper_param.max_rule_length is None:
-            hyper_param.max_rule_length = state["n_features"]
+            hyper_param.max_rule_length = n_features
 
         while current_size < hyper_param.max_rule_length:
             # -----------------------------------------------------------------
             # Call 'GenerateCands' and get new candidate rules.
-            cands: list[Rule]
-            cands = NewLimeBaseBeam.make_tuples(prev_best_b_cands, state)
+            arms = NewLimeBaseBeam.make_tuples(
+                [cand.rule for cand in prev_best_b_cands],
+                sample_fn,
+                n_features,
+                coverage_data,
+            )
             # -----------------------------------------------------------------
-
-            # list of indexes of the B best rules of candidate rules
-            b_best_idxes: list[int]
 
             # list of the B best rules
             # (thus it has the same length as chosen_tuples)
-            b_best_cands: list[Rule]
-
-            # list of methods to sample perturbed vectors under the each rule
-            # in the candidate rules
-            # (thus it has the same length as cands)
-            sample_fns: list[CompleteSampleFn]
-
-            # list of surrogate models learned under the each rule in the B
-            # best rules
-            # (thus it has the same length as cands)
-            surrogate_models: list[compose.Pipeline]
+            b_best_cands: list[Arm]
 
             # Call 'B-BestCands' and get the best B candidate rules.
-            (
-                b_best_idxes,
-                b_best_cands,
-                sample_fns,
-                surrogate_models,
-            ) = NewLimeBaseBeam.b_best_cands(
-                cands,
-                sample_fn,
-                hyper_param,
-                state,
-            )
+            b_best_cands = NewLimeBaseBeam.b_best_cands(arms, hyper_param)
 
             best_of_size[current_size] = b_best_cands
 
@@ -757,20 +478,16 @@ class NewLimeBaseBeam:
             # the rule with the highest coverage of the rules with higher
             # precision than tau in the B best rules
             # (if it does not exist, None)
-            best_cand: RuleClass | None
+            best_cand: Arm | None
 
             # Call 'LargestValidCand' and get the candidate rule with the
             # highest coverage in the best B candidate rules
             best_cand = NewLimeBaseBeam.largest_valid_cand(
-                list(zip(b_best_idxes, b_best_cands)),
-                hyper_param,
-                state,
-                sample_fns,
-                surrogate_models,
+                b_best_cands, hyper_param, n_features
             )
 
             if best_cand is not None:
-                best_rule = best_cand
+                best_arm = best_cand
                 break
 
             # -----------------------------------------------------------------
@@ -781,12 +498,4 @@ class NewLimeBaseBeam:
 
         # end while
 
-        if best_rule is None:
-            return None
-
-        return (
-            NewLimeBaseBeam.get_anchor_from_tuple(best_rule.rule, state),
-            best_rule.model,
-        )
-
-    ##
+        return best_arm
