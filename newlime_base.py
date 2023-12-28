@@ -71,6 +71,42 @@ class RuleClass:
     coverage: float
 
 
+class Arm:
+    """This is a class for an arm in multi-armed bandit problem.
+
+    Attributes
+    ----------
+    n_samples: int
+        The number of samples generated under the arm
+    """
+
+    def __init__(self, rule: Rule, coverage_data: np.ndarray) -> None:
+        """Initialize the class"""
+        self.rule = rule
+        self.n_samples = 0
+        self.n_rewards = 0
+        covered = Arm.count_covered_samples(self.rule, coverage_data)
+        self.coverage = covered / coverage_data.shape[0]
+
+    @staticmethod
+    def count_covered_samples(rule: Rule, samples: np.ndarray) -> int:
+        """Count the number of samples covered by the rule
+
+        Parameters
+        ----------
+        rule: tuple
+            The rule under which the perturbed vectors are sampled
+        samples: np.ndarray
+            The perturbed vectors
+
+        Returns
+        -------
+        int
+            The number of samples covered by the rule
+        """
+        return sum(all(sample[i] == 1 for i in rule) for sample in samples)
+
+
 @dataclasses.dataclass
 class HyperParam:  # pylint: disable=too-many-instance-attributes
     """Hyper parameters for beam search of best anchor
@@ -131,25 +167,9 @@ class NewLimeBaseBeam:
     """
 
     @staticmethod
-    def count_covered_samples(rule: Rule, samples: np.ndarray) -> int:
-        """Count the number of samples covered by the rule
-
-        Parameters
-        ----------
-        rule: tuple
-            The rule under which the perturbed vectors are sampled
-        samples: np.ndarray
-            The perturbed vectors
-
-        Returns
-        -------
-        int
-            The number of samples covered by the rule
-        """
-        return sum(all(sample[i] == 1 for i in rule) for sample in samples)
-
-    @staticmethod
-    def make_tuples(previous_best: list[Rule], state: State) -> list[Rule]:
+    def make_tuples(
+        previous_best: list[Rule], n_features: int, coverage_data: np.ndarray
+    ) -> list[Arm]:
         """Generate candidate rules.
 
         Parameters
@@ -165,16 +185,13 @@ class NewLimeBaseBeam:
             The list of candidate rules
         """
 
-        all_features = range(state["n_features"])
-        coverage_data = state["coverage_data"]
-
         # Generate new candidates.
         new_cands: list[Rule]
         if len(previous_best) == 0:
             new_cands = [()]
         else:
             set_tuples = set()
-            for f in all_features:
+            for f in range(n_features):
                 for t in previous_best:
                     new_t = tuple(sorted(set(t + (f,))))
                     if len(new_t) != len(t) + 1:
@@ -184,13 +201,7 @@ class NewLimeBaseBeam:
 
         # Initialize the number of samples, the number of positive samples and
         # the coverage of the rules.
-        for x in new_cands:
-            state["t_nsamples"][x] = 0
-            state["t_rewards"][x] = 0
-            covered = NewLimeBaseBeam.count_covered_samples(x, coverage_data)
-            state["t_coverage"][x] = covered / coverage_data.shape[0]
-
-        return list(new_cands)
+        return [Arm(t, coverage_data) for t in new_cands]
 
     @staticmethod
     def update_state(
@@ -606,10 +617,9 @@ class NewLimeBaseBeam:
         return {
             "t_nsamples": t_nsamples,
             "t_rewards": t_rewards,
-            "n_features": n_features,
             "t_coverage": t_coverage,
+            "n_features": n_features,
             "coverage_data": coverage_data,
-            "t_order": collections.defaultdict(list),
         }
 
     ##
@@ -716,8 +726,14 @@ class NewLimeBaseBeam:
         while current_size < hyper_param.max_rule_length:
             # -----------------------------------------------------------------
             # Call 'GenerateCands' and get new candidate rules.
-            cands: list[Rule]
-            cands = NewLimeBaseBeam.make_tuples(prev_best_b_cands, state)
+            arms = NewLimeBaseBeam.make_tuples(
+                prev_best_b_cands, state["n_features"], state["coverage_data"]
+            )
+            cands = [arm.rule for arm in arms]
+            for i, cand in enumerate(cands):
+                state["t_nsamples"][cand] = arms[i].n_samples
+                state["t_rewards"][cand] = arms[i].n_rewards
+                state["t_coverage"][cand] = arms[i].coverage
             # -----------------------------------------------------------------
 
             # list of indexes of the B best rules of candidate rules
