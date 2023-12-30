@@ -13,8 +13,12 @@ import dataclasses
 from typing import Callable
 
 import numpy as np
+import pandas as pd
 from anchor.anchor_base import AnchorBaseBeam
 from river import compose, linear_model, preprocessing
+
+Rule = tuple[int, ...]
+Classifier = Callable[[np.ndarray], np.ndarray]
 
 
 @dataclasses.dataclass
@@ -38,8 +42,170 @@ class Samples:
     rewards: np.ndarray
 
 
-Rule = tuple[int, ...]
-SampleFn = Callable[[int, Rule, bool, compose.Pipeline | None, bool], Samples]
+class Sampler:
+    """This class provides sampling functions for NewLIME. The sample is taken
+    from the conditional multivariate Gaussian distribution. The mean and
+    covariance matrix of the distribution are computed from the training data
+    and the given conditions.
+    """
+
+    def __init__(
+        self,
+        trg: np.ndarray,
+        train: np.ndarray,
+        black_box_model: Classifier,
+        categorical_names: dict[int, list[str]],
+    ):
+        """Initialize Sampler.
+
+        Parameters
+        ----------
+        trg : np.ndarray
+            Target instance.
+        train : np.ndarray
+            Training data for computing mean and covariance matrix of the
+            conditional multivariate Gaussian distribution.
+        black_box_model : Classifier
+            Black box model.
+        categorical_names : dict[int, list[str]]
+            Dictionary of categorical feature names and possible values.
+        """
+
+        self.trg = trg
+        self.black_box_model = black_box_model
+        self.rng = np.random.default_rng()
+        self.category_counts = {
+            i: len(v) for i, v in categorical_names.items()
+        }
+
+        self.params: dict[Rule, tuple[np.ndarray, np.ndarray]]
+        emp_mean = np.mean(train, axis=0)
+        emp_cov = np.cov(train, rowvar=False)
+        self.params = {(): (emp_mean, emp_cov)}
+
+    def get_params(self, rule: Rule) -> tuple[np.ndarray, np.ndarray]:
+        """Compute mean and covariance matrix of conditional multivariate
+        Gaussian distribution.
+
+        Parameters
+        ----------
+        rule : Rule
+            Target rule. The rule is represented as a tuple of feature indices.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Mean and covariance matrix of conditional multivariate Gaussian
+            distribution.
+        """
+
+        # Get indices of features in the rule and not in the rule
+        idx: list[int] = []
+        not_idx: list[int] = []
+
+        assert isinstance(rule, tuple)
+        for i in range(len(self.trg)):
+            if i in rule:
+                not_idx.append(i)
+            else:
+                idx.append(i)
+
+        # Compute mean and covariance matrix of conditional multivariate
+        # Gaussian distribution
+        emp_mean, emp_cov = self.params[()]
+        cond_mean = emp_mean[idx] + np.dot(
+            np.dot(
+                emp_cov[idx][:, not_idx],
+                np.linalg.inv(emp_cov[not_idx][:, not_idx]),
+            ),
+            (self.trg[not_idx] - emp_mean[not_idx]),
+        )
+        cond_cov = emp_cov[idx][:, idx] - np.dot(
+            np.dot(
+                emp_cov[idx][:, not_idx],
+                np.linalg.inv(emp_cov[not_idx][:, not_idx]),
+            ),
+            emp_cov[not_idx][:, idx],
+        )
+
+        return cond_mean, cond_cov
+
+    def discretize(self, data: np.ndarray) -> np.ndarray:
+        """Discretize data points.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Data points to be discretized.
+
+        Returns
+        -------
+        np.ndarray
+            Discretized data points.
+        """
+
+        # Discretize data points
+        d_data: np.ndarray = np.zeros_like(data)
+        for one_data, d_one_data in zip(data, d_data):
+            for i, x in enumerate(one_data):
+                if i in self.category_counts:
+                    if x >= self.category_counts[i]:
+                        d_one_data[i] = self.category_counts[i] - 1
+                    elif x < 0:
+                        d_one_data[i] = 0
+                    else:
+                        d_one_data[i] = np.array(x, dtype=int)
+                else:
+                    d_data[i] = np.array(x, dtype=float)
+
+        return d_data
+
+    def sample(
+        self, num_samples: int, rule: Rule | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Sample data points from conditional multivariate Gaussian
+        distribution.
+
+        Parameters
+        ----------
+        num_samples : int
+            The number of returned sample.
+        rule : Rule, optional (default=None)
+            Target rule. The rule is represented as a tuple of feature indices.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            The perturbed vectors sampled from distribution and the boolean
+            vectors that indicates whether the feature is same as the target
+            instance or not.
+        """
+
+        if rule is None:
+            rule = ()
+        assert isinstance(rule, tuple)
+        if rule not in self.params:
+            self.params[rule] = self.get_params(rule)
+
+        # Sample from conditional multivariate Gaussian distribution
+        mean, cov = self.params[rule]
+        sampled_data: np.ndarray = self.rng.multivariate_normal(
+            mean, cov, num_samples
+        )
+
+        full_data: np.ndarray = np.zeros((num_samples, len(self.trg)))
+        for full, sampled in zip(full_data, sampled_data):
+            full[:] = self.trg[:]
+            not_idx = [i for i in range(len(self.trg)) if i not in rule]
+            if not_idx:
+                full[not_idx] = sampled[:]
+
+        # Discretize sampled data points
+        d_full_data = self.discretize(full_data)
+
+        psuedo_labels = self.black_box_model(d_full_data)
+
+        return np.array(d_full_data), np.array(psuedo_labels)
 
 
 class Arm:
@@ -47,23 +213,21 @@ class Arm:
 
     Attributes
     ----------
+    rule: Rule
+        The rule under which the perturbed vectors are sampled
+    surrogate_model: Pipeline
+        The surrogate model
     n_samples: int
         The number of samples generated under the arm
     n_rewards: int
         The number of samples that the surrogate model predicts the same label
         as the black box model
-    rule: Rule
-        The rule under which the perturbed vectors are sampled
-    surrogate_model: Pipeline
-        The surrogate model
-    sample_fn: SampleFn
-        The function that samples perturbed vectors under the rule
     coverage: float
         The coverage of the rule
     """
 
     def __init__(
-        self, rule: Rule, sample_fn: SampleFn, coverage_data: np.ndarray
+        self, rule: Rule, sampler: Sampler, coverage_data: np.ndarray
     ) -> None:
         """Initialize the class Arm
 
@@ -71,15 +235,15 @@ class Arm:
         ----------
         rule: Rule
             The rule under which the perturbed vectors are sampled
-        sample_fn: SampleFn
-            The function that samples perturbed vectors under the rule
+        sampler: Sampler
+            The sampler for sampling perturbed vectors
         coverage_data: np.ndarray
             The data for calculating coverage of the rules
         """
 
         self.rule = rule
         self.surrogate_model = Arm.init_surrogate_model()
-        self.sample_fn = sample_fn
+        self.sampler = sampler
         self.n_samples = 0
         self.n_rewards = 0
         covered = Arm.count_covered_samples(self.rule, coverage_data)
@@ -117,27 +281,28 @@ class Arm:
         """
         return sum(all(sample[i] == 1 for i in rule) for sample in samples)
 
-    def sample(self, n: int) -> int:
+    def sample(self, n: int) -> None:
         """Sample perturbed vectors under the arm and update the arm
 
         Parameters
         ----------
         n: int
             The number of perturbed vectors sampled
-
-        Returns
-        -------
-        int
-            The number of perturbed vectors that the surrogate model
-            predicts the same label as the black box model
         """
-        samples: Samples
-        samples = self.sample_fn(
-            n, self.rule, True, self.surrogate_model, True
-        )
+
+        raw_data, psuedo_labels = self.sampler.sample(n, self.rule)
+
         self.n_samples += n
-        self.n_rewards += samples.rewards.sum()
-        return int(samples.rewards.sum())
+        data_x: pd.DataFrame = pd.DataFrame(raw_data)
+        data_y = pd.Series(psuedo_labels)
+        reward_list = (
+            self.surrogate_model.predict_many(data_x) == data_y
+        ).astype(int)
+        self.n_rewards += sum(reward_list)
+
+        self.surrogate_model.learn_many(data_x, data_y)
+
+        # return int(samples.rewards.sum())
 
 
 @dataclasses.dataclass
@@ -184,7 +349,7 @@ class NewLimeBaseBeam:
     @staticmethod
     def make_tuples(
         previous_best: list[Rule],
-        sample_fn: SampleFn,
+        sampler: Sampler,
         n_features: int,
         coverage_data: np.ndarray,
     ) -> list[Arm]:
@@ -194,8 +359,8 @@ class NewLimeBaseBeam:
         ----------
         previous_best: list
             The list of the B best rules of the previous iteration
-        sample_fn: SampleFn
-            The function that samples perturbed vectors under the rule
+        sampler: Sampler
+            The sampler for sampling perturbed vectors
         n_features: int
             The number of features
         coverage_data: np.ndarray
@@ -223,7 +388,7 @@ class NewLimeBaseBeam:
 
         # Initialize the number of samples, the number of positive samples and
         # the coverage of the rules.
-        return [Arm(t, sample_fn, coverage_data) for t in new_cands]
+        return [Arm(t, sampler, coverage_data) for t in new_cands]
 
     @staticmethod
     def lucb(cands: list[Arm], hyper_param: HyperParam) -> list[int]:
@@ -359,6 +524,8 @@ class NewLimeBaseBeam:
             The list of the B best rules
         hyper_param: HyperParam
             The hyper parameters for beam search of best anchor
+        n_features: int
+            The number of features
 
         Returns
         -------
@@ -410,15 +577,11 @@ class NewLimeBaseBeam:
         return best_cand
 
     @staticmethod
-    def beam_search(
-        sample_fn: SampleFn, hyper_param: HyperParam
-    ) -> Arm | None:
+    def beam_search(sampler: Sampler, hyper_param: HyperParam) -> Arm | None:
         """Beam search for optimal rule and model
 
         Parameters
         ----------
-        sample_fn: Callable
-            The function that samples perturbed vectors
         hyper_param: HyperParam
             The hyper parameters for beam search of best anchor
 
@@ -427,15 +590,11 @@ class NewLimeBaseBeam:
         Arm | None
             The rule with the highest coverage of the rules with higher
             precision than tau in the B best rules
+            (if it does not exist, None)
         """
 
         # Generate initial samples to calculate coverage of the rules
-        samples: Samples
-        samples = sample_fn(
-            hyper_param.coverage_samples_num, (), False, None, False
-        )
-        coverage_data: np.ndarray
-        coverage_data = samples.data
+        coverage_data, _ = sampler.sample(hyper_param.coverage_samples_num, ())
         n_features = coverage_data.shape[1]
 
         # the rule with the highest coverage of the rules with higher
@@ -458,7 +617,7 @@ class NewLimeBaseBeam:
             # Call 'GenerateCands' and get new candidate rules.
             arms = NewLimeBaseBeam.make_tuples(
                 [cand.rule for cand in prev_best_b_cands],
-                sample_fn,
+                sampler,
                 n_features,
                 coverage_data,
             )

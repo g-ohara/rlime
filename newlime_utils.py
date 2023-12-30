@@ -12,55 +12,17 @@ import anchor.utils
 import matplotlib.pyplot as plt
 import numpy as np
 import sklearn.ensemble
-from anchor import anchor_explanation, anchor_tabular
+from anchor import anchor_tabular
 from lime import lime_tabular
 
-
-@dataclass
-class Dataset(
-    anchor.utils.Bunch
-):  # pylint: disable=too-many-instance-attributes
-    """Dataset class"""
-
-    data: np.ndarray
-    labels: np.ndarray
-    train_idx: np.ndarray
-    train: np.ndarray
-    labels_train: np.ndarray
-    validation_idx: np.ndarray
-    validation: np.ndarray
-    labels_validation: np.ndarray
-    test_idx: np.ndarray
-    test: np.ndarray
-    labels_test: np.ndarray
-    feature_names: list[str]
-    categorical_names: dict[int, list[str]]
-    class_target: str
-    class_names: list[str]
-
-
-# class Dataset(anchor.utils.Bunch):
-#     def __init__(self) -> None:
-#         super().__init__({})
-#         self.data: np.ndarray
-#         self.labels: np.ndarray
-#         self.train_idx: np.ndarray
-#         self.train: np.ndarray
-#         self.labels_train: np.ndarray
-#         self.validation_idx: np.ndarray
-#         self.validation: np.ndarray
-#         self.labels_validation: np.ndarray
-#         self.test_idx: np.ndarray
-#         self.test: np.ndarray
-#         self.labels_test: np.ndarray
-#         self.feature_names: list[str]
-#         self.categorical_names: dict[int, list[str]]
-#         self.class_target: str
-#         self.class_names: list[str]
+from newlime_tabular import Dataset
 
 
 def load_dataset(
-    dataset_name: str, dataset_folder: str, balance: bool
+    dataset_name: str,
+    dataset_folder: str,
+    balance: bool,
+    discretize: bool = True,
 ) -> Dataset:
     """Download balanced and descretized dataset"""
 
@@ -87,7 +49,7 @@ def load_dataset(
             dataset_name=dataset_name,
             dataset_folder=dataset_folder,
             balance=balance,
-            discretize=True,
+            discretize=discretize,
         ),
     )
 
@@ -121,8 +83,8 @@ def get_imbalanced_dataset(balanced: Dataset, pos_rate: float) -> Dataset:
     neg_num = np.sum(dataset.labels == 0)
     pos_num = int(pos_rate * neg_num / (1 - pos_rate))
     pos_data_idx = []
-    for i, l in enumerate(dataset.labels):
-        if l == 1:
+    for i, label in enumerate(dataset.labels):
+        if label == 1:
             pos_data_idx.append(i)
     np.random.seed(1024)
     del_list = np.random.choice(
@@ -208,11 +170,18 @@ def get_trg_sample(
     return trg, label, trg_data
 
 
+@dataclass
+class RuleInfo:
+    """Rule information"""
+
+    rule_str: list[str]
+    precision: float
+    coverage: float
+
+
 def plot_weights(
     weights: list[float],
-    names: list[str],
-    precision: float,
-    coverage: float,
+    rule_info: RuleInfo,
     feature_names: list[str],
     img_name: str | None = None,
 ) -> None:
@@ -261,12 +230,12 @@ def plot_weights(
             multiline_names.append(" AND ".join(names[max_i * 3 :]))
         return " AND \n".join(multiline_names)
 
-    anchor_str = concat_names(names)
+    anchor_str = concat_names(rule_info.rule_str)
     if anchor_str is not None:
         plt.title(
             f"{anchor_str}\n"
-            f"with Precision {precision:.3f} "
-            f"and Coverage {coverage:.3f}"
+            f"with Precision {rule_info.precision:.3f} "
+            f"and Coverage {rule_info.coverage:.3f}"
         )
 
     for f, v in zip(sorted_features, sorted_values):
