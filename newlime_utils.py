@@ -2,6 +2,7 @@
     This is a program for user explanation to test improved interpretability of
     NewLIME.
 """
+
 import copy
 import random
 import typing
@@ -15,6 +16,7 @@ import sklearn.ensemble
 from anchor import anchor_tabular
 from lime import lime_tabular
 
+from newlime_base import IntArray
 from newlime_tabular import Dataset
 
 
@@ -144,7 +146,7 @@ def get_categorical_names(
 
 def get_trg_sample(
     index: int | None, bunch: anchor.utils.Bunch
-) -> tuple[np.ndarray, np.ndarray, list[tuple[str, str]]]:
+) -> tuple[IntArray, IntArray, list[tuple[str, str]]]:
     """Get a sample randomly from test set"""
 
     dataset = typing.cast(Dataset, bunch)
@@ -246,7 +248,7 @@ def plot_weights(
 
 
 def lime_original(
-    trg: np.ndarray,
+    trg: IntArray,
     pred_label: int,
     dataset: Dataset,
     model: sklearn.ensemble.RandomForestClassifier,
@@ -286,7 +288,7 @@ def lime_original(
 
 
 def anchor_original(
-    trg: np.ndarray,
+    trg: IntArray,
     dataset: Dataset,
     model: sklearn.ensemble.RandomForestClassifier,
     threshold: float = 0.80,
