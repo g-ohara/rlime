@@ -183,8 +183,8 @@ class RuleInfo:
 
 def plot_weights(
     weights: list[float],
-    rule_info: RuleInfo,
     feature_names: list[str],
+    rule_info: RuleInfo | None = None,
     img_name: str | None = None,
 ) -> None:
     """Plot the weights of the surrogate model.
@@ -232,8 +232,8 @@ def plot_weights(
             multiline_names.append(" AND ".join(names[max_i * 3 :]))
         return " AND \n".join(multiline_names)
 
-    anchor_str = concat_names(rule_info.rule_str)
-    if anchor_str is not None:
+    if rule_info is not None:
+        anchor_str = concat_names(rule_info.rule_str)
         plt.title(
             f"{anchor_str}\n"
             f"with Precision {rule_info.precision:.3f} "
@@ -245,6 +245,8 @@ def plot_weights(
 
     if img_name is not None:
         plt.savefig(img_name, bbox_inches="tight")
+
+    plt.close()
 
 
 def lime_original(

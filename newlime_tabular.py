@@ -136,14 +136,53 @@ def add_names_to_exp(
     return names
 
 
+def get_mapping(
+    trg: IntArray,
+    categorical_features: list[int],
+    ordinal_features: list[int],
+    categorical_names: dict[int, list[str]],
+) -> Mapping:
+    """Get mapping from index to feature name
+
+    Parameters
+    ----------
+    trg: IntArray
+        Target instance.
+    categorical_features: list[int]
+    ordinal_features: list[int]
+    categorical_names: dict[int, list[str]]
+
+    Returns
+    -------
+    Mapping
+        Dicrionary from index to feature, operator, and value.
+        - feature: int
+        - operator: str (one of "eq", "geq" or "leq")
+        - value: int
+    """
+    mapping: Mapping = {}
+    for f in categorical_features:
+        if f in ordinal_features:
+            for v in range(len(categorical_names[f])):
+                idx = len(mapping)
+                if trg[f] <= v:
+                    mapping[idx] = (f, "leq", v)
+                elif trg[f] > v:
+                    mapping[idx] = (f, "geq", v)
+        else:
+            idx = len(mapping)
+            mapping[idx] = (f, "eq", trg[f])
+    return mapping
+
+
 def explain_instance(
     data_row: IntArray,
     dataset: Dataset,
     classifier_fn: Classifier,
     hyper_param: HyperParam,
 ) -> tuple[list[str], Arm] | None:
-    """Generate NewLIME explanation for given classifier on neighborhood of
-    given data point.
+    """Generate NewLIME explanation for given classifier on neighborhood
+    of given data point.
 
     Parameters
     ----------
@@ -170,23 +209,12 @@ def explain_instance(
         return None
 
     # Generate Mapping
-    mapping: Mapping = {}
-    for f in dataset.categorical_features:
-        if f in dataset.ordinal_features:
-            for v in range(len(dataset.categorical_names[f])):
-                idx = len(mapping)
-                if data_row[f] <= v:
-                    mapping[idx] = (f, "leq", v)
-                    # names[idx] = '%s <= %s' % (self.feature_names[f], v)
-                elif data_row[f] > v:
-                    mapping[idx] = (f, "geq", v)
-                    # names[idx] = '%s > %s' % (self.feature_names[f], v)
-        else:
-            idx = len(mapping)
-            mapping[idx] = (f, "eq", data_row[f])
-        # names[idx] = '%s = %s' % (
-        #     self.feature_names[f],
-        #     self.categorical_names[f][int(data_row[f])])
+    mapping = get_mapping(
+        data_row,
+        dataset.categorical_features,
+        dataset.ordinal_features,
+        dataset.categorical_names,
+    )
 
     names = add_names_to_exp(
         arm, mapping, dataset.feature_names, dataset.categorical_names
