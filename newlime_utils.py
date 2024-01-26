@@ -33,7 +33,7 @@ def load_dataset(
         1: ["No", "Yes"],
         2: ["No", "Yes"],
         3: ["No", "Yes"],
-        4: ["No", "Married"],
+        4: ["No", "Yes"],
         5: ["No", "Yes"],
         6: ["No", "Yes"],
         7: ["No", "Yes"],
@@ -219,6 +219,7 @@ def plot_weights(
         "#32a852" if sorted_values[i] > 0 else "#cf4529"
         for i in range(len(sorted_values))
     ]
+    plt.rc('ytick', labelsize=12)
     plt.barh(sorted_features, sorted_values, color=color)
 
     def concat_names(names: list[str]) -> str:
@@ -237,11 +238,12 @@ def plot_weights(
         plt.title(
             f"{anchor_str}\n"
             f"with Precision {rule_info.precision:.3f} "
-            f"and Coverage {rule_info.coverage:.3f}"
+            f"and Coverage {rule_info.coverage:.3f}",
+            fontsize=15
         )
 
     for f, v in zip(sorted_features, sorted_values):
-        plt.text(v, f, round(v, 5))
+        plt.text(v, f, round(v, 5), fontsize=12)
 
     if img_name is not None:
         plt.savefig(img_name, bbox_inches="tight")
