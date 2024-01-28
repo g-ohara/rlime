@@ -237,7 +237,7 @@ def plot_weights(
         anchor_str = concat_names(rule_info.rule_str)
         plt.title(
             f"{anchor_str}\n"
-            f"with Precision {rule_info.precision:.3f} "
+            f"with Accuracy {rule_info.precision:.3f} "
             f"and Coverage {rule_info.coverage:.3f}",
             fontsize=15
         )
