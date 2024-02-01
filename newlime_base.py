@@ -211,7 +211,9 @@ class Arm:
         self.sampler = sampler
         self.n_samples = 0
         self.n_rewards = 0
-        covered = Arm.count_covered_samples(self.rule, coverage_data)
+        covered = Arm.count_covered_samples(
+            self.rule, sampler.trg, coverage_data
+        )
         self.coverage = covered / coverage_data.shape[0]
 
     @staticmethod
@@ -229,13 +231,17 @@ class Arm:
         return pipeline
 
     @staticmethod
-    def count_covered_samples(rule: Rule, samples: IntArray) -> int:
+    def count_covered_samples(
+        rule: Rule, trg: IntArray, samples: IntArray
+    ) -> int:
         """Count the number of samples covered by the rule
 
         Parameters
         ----------
         rule: Rule
             The rule under which the perturbed vectors are sampled
+        trg: IntArray
+            The target instance
         samples: np.ndarray
             The perturbed vectors
 
@@ -244,7 +250,9 @@ class Arm:
         int
             The number of samples covered by the rule
         """
-        return sum(all(sample[i] == 1 for i in rule) for sample in samples)
+        return sum(
+            all(sample[i] == trg[i] for i in rule) for sample in samples
+        )
 
     def sample(self, n: int) -> None:
         """Sample perturbed vectors under the arm and update the arm
