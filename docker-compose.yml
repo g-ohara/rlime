@@ -1,10 +1,9 @@
 services:
-  latex:
+  python:
     image: genjiohara/python
-    container_name: docker-python
+    container_name: newlime
     volumes:
       - ./:/root/workspace
-      - ~/:/root
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
       - DISPLAY=$DISPLAY
