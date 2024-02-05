@@ -3,10 +3,22 @@
 This module implements NewLIME explainer for tabular datasets.
 """
 
+import csv
+import multiprocessing
+import sys
 from dataclasses import dataclass
 
-import newlime_base
+from sklearn.ensemble import RandomForestClassifier
+
 from newlime_base import Arm, Classifier, HyperParam, IntArray, Rule
+
+sys.path.append("../NewLIME")
+
+# pylint: disable=import-error,wrong-import-position
+import newlime_base  # pyright: ignore[reportMissingImports] # noqa: E402
+import newlime_tabular  # pyright: ignore[reportMissingImports] # noqa: E402
+import newlime_utils  # pyright: ignore[reportMissingImports] # noqa: E402
+
 
 
 @dataclass

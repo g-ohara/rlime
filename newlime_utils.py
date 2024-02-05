@@ -1,6 +1,6 @@
 """
-    This is a program for user explanation to test improved interpretability of
-    NewLIME.
+This is a program for user explanation to test improved interpretability of
+NewLIME.
 """
 
 import copy
@@ -16,6 +16,8 @@ import sklearn.ensemble
 from anchor import anchor_tabular
 from lime import lime_tabular
 
+import newlime_base
+import newlime_tabular
 from newlime_base import IntArray
 from newlime_tabular import Dataset
 
@@ -219,7 +221,7 @@ def plot_weights(
         "#32a852" if sorted_values[i] > 0 else "#cf4529"
         for i in range(len(sorted_values))
     ]
-    plt.rc('ytick', labelsize=12)
+    plt.rc("ytick", labelsize=12)
     plt.barh(sorted_features, sorted_values, color=color)
 
     def concat_names(names: list[str]) -> str:
@@ -239,7 +241,7 @@ def plot_weights(
             f"{anchor_str}\n"
             f"with Accuracy {rule_info.precision:.3f} "
             f"and Coverage {rule_info.coverage:.3f}",
-            fontsize=15
+            fontsize=15,
         )
 
     for f, v in zip(sorted_features, sorted_values):
@@ -327,3 +329,50 @@ def anchor_original(
     )
     anchor_str = " AND ".join(anchor_exp.names())
     return threshold, anchor_str, anchor_exp.precision(), anchor_exp.coverage()
+
+
+def generate_lime(
+    idx: int,
+    trg: IntArray,
+    dataset: Dataset,
+    black_box: newlime_base.Classifier,
+    img_name: str,
+) -> None:
+    """Generate the LIME explanation for the given sample."""
+
+    print(f"Target instance: {idx}")
+
+    # Generate the LIME explanation and standardize its weights.
+    pred_label = black_box(trg.reshape(1, -1))[0]
+    weights = lime_original(trg, pred_label, dataset, black_box)
+    weights = [w / sum(map(abs, weights)) for w in weights]
+
+    # Save the LIME explanation as an image.
+    plot_weights(
+        weights, dataset.feature_names, rule_info=None, img_name=img_name
+    )
+
+
+def generate_rlime(
+    trg: IntArray,
+    dataset: Dataset,
+    black_box: newlime_base.Classifier,
+    img_name: str,
+    hyper_param: newlime_base.HyperParam,
+) -> None:
+    """Generate the R-LIME explanations for the given sample."""
+
+    # Generate the R-LIME explanation and standardize its weights.
+    result = newlime_tabular.explain_instance(
+        trg, dataset, black_box, hyper_param
+    )
+    if result is None:
+        print("No explanation found.")
+        return
+    names, arm = result
+    weights = list(arm.surrogate_model["LogisticRegression"].weights.values())
+    weights = [w / sum(map(abs, weights)) for w in weights]
+
+    # Save the R-LIME explanation as an image.
+    rule_info = RuleInfo(names, arm.n_rewards / arm.n_samples, arm.coverage)
+    plot_weights(weights, dataset.feature_names, rule_info, img_name)
