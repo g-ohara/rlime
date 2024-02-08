@@ -14,12 +14,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sklearn.ensemble
 from anchor import anchor_tabular
-from lime import lime_tabular
 
-import newlime_base
-import newlime_tabular
-from newlime_base import IntArray
 from newlime_tabular import Dataset
+from newlime_types import IntArray
 
 
 def load_dataset(
@@ -253,46 +250,6 @@ def plot_weights(
     plt.close()
 
 
-def lime_original(
-    trg: IntArray,
-    pred_label: int,
-    dataset: Dataset,
-    model: sklearn.ensemble.RandomForestClassifier,
-) -> list[float]:
-    """Run LIME and plot the weights.
-
-    Parameters
-    ----------
-    trg : np.ndarray
-        The target sample
-    pred_label : int
-        The predicted label of the target sample
-    dataset : Dataset
-        The dataset
-    model : sklearn.ensemble.RandomForestClassifier
-        The black box model (random forest)
-
-    Returns
-    -------
-    list[float]
-        The weights of the features
-    """
-
-    lime_explainer = lime_tabular.LimeTabularExplainer(
-        dataset.train,
-        feature_names=dataset.feature_names,
-        class_names=dataset.class_names,
-        discretize_continuous=False,
-    )
-    lime_exp = lime_explainer.explain_instance(
-        trg, model.predict_proba, num_features=5, top_labels=1
-    )
-    weights = [0.0] * len(dataset.feature_names)
-    for t in lime_exp.local_exp[pred_label]:
-        weights[t[0]] = t[1] * (pred_label * 2 - 1)
-    return weights
-
-
 def anchor_original(
     trg: IntArray,
     dataset: Dataset,
@@ -329,50 +286,3 @@ def anchor_original(
     )
     anchor_str = " AND ".join(anchor_exp.names())
     return threshold, anchor_str, anchor_exp.precision(), anchor_exp.coverage()
-
-
-def generate_lime(
-    idx: int,
-    trg: IntArray,
-    dataset: Dataset,
-    black_box: newlime_base.Classifier,
-    img_name: str,
-) -> None:
-    """Generate the LIME explanation for the given sample."""
-
-    print(f"Target instance: {idx}")
-
-    # Generate the LIME explanation and standardize its weights.
-    pred_label = black_box(trg.reshape(1, -1))[0]
-    weights = lime_original(trg, pred_label, dataset, black_box)
-    weights = [w / sum(map(abs, weights)) for w in weights]
-
-    # Save the LIME explanation as an image.
-    plot_weights(
-        weights, dataset.feature_names, rule_info=None, img_name=img_name
-    )
-
-
-def generate_rlime(
-    trg: IntArray,
-    dataset: Dataset,
-    black_box: newlime_base.Classifier,
-    img_name: str,
-    hyper_param: newlime_base.HyperParam,
-) -> None:
-    """Generate the R-LIME explanations for the given sample."""
-
-    # Generate the R-LIME explanation and standardize its weights.
-    result = newlime_tabular.explain_instance(
-        trg, dataset, black_box, hyper_param
-    )
-    if result is None:
-        print("No explanation found.")
-        return
-    names, arm = result
-    weights = list(arm.surrogate_model["LogisticRegression"].weights.values())
-    weights = [w / sum(map(abs, weights)) for w in weights]
-
-    # Save the R-LIME explanation as an image.
-    rule_info = RuleInfo(names, arm.n_rewards / arm.n_samples, arm.coverage)
-    plot_weights(weights, dataset.feature_names, rule_info, img_name)
