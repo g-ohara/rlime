@@ -73,7 +73,7 @@ def generate_lime_and_rlime(
 
     # Generate the LIME explanation and save it as an image.
     print("LIME")
-    generate_lime(idx, trg, dataset, black_box, f"data/lime-{idx:04d}.png")
+    generate_lime(trg, dataset, black_box, f"data/lime-{idx:04d}.png")
 
     # Generate the R-LIME explanation and save it as an image.
     print("R-LIME")
@@ -90,15 +90,12 @@ def generate_lime_and_rlime(
 
 
 def generate_lime(
-    idx: int,
     trg: IntArray,
     dataset: Dataset,
     black_box: Classifier,
     img_name: str,
 ) -> None:
     """Generate the LIME explanation for the given sample."""
-
-    print(f"Target instance: {idx}")
 
     # Generate the LIME explanation.
     sampler = Sampler(trg, dataset.train, black_box, dataset.categorical_names)
