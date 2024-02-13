@@ -194,12 +194,8 @@ def plot_weights(
         The weights of the features
     feature_names : list[str]
         The names of the features
-    anchor_str : str, optional
-        The rule, by default None
-    precision : float, optional
-        The precision, by default None
-    coverage : float, optional
-        The coverage, by default None
+    rule_info : RuleInfo, optional
+        The rule string, accuracy and coverage, by default None
     img_name : str, optional
         The name of the image, by default None
 
@@ -222,14 +218,25 @@ def plot_weights(
     plt.barh(sorted_features, sorted_values, color=color)
 
     def concat_names(names: list[str]) -> str:
-        """concatenate the names to multiline string"""
+        """concatenate the names to multiline string such that the string
+        length is less than the specified length"""
+
         multiline_names = []
-        max_i = int(len(names) / 3)
-        for i in range(max_i):
-            triple = [names[i * 3], names[i * 3 + 1], names[i * 3 + 2]]
-            multiline_names.append(" AND ".join(triple))
-        if len(names) != max_i * 3:
-            multiline_names.append(" AND ".join(names[max_i * 3 :]))
+        line: list[str] = []
+        line_len = 0
+        and_len = len(" AND ")
+        max_len = 50
+
+        for name in names:
+            if line_len + and_len + len(name) > max_len and len(line) > 0:
+                multiline_names.append(" AND ".join(line))
+                line = [name]
+                line_len = len(name)
+            else:
+                line.append(name)
+                line_len += len(name) + and_len
+
+        multiline_names.append(" AND ".join(line))
         return " AND \n".join(multiline_names)
 
     if rule_info is not None:

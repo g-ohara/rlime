@@ -49,7 +49,7 @@ def main() -> None:
         trg, label, tab = newlime_utils.get_trg_sample(idx, dataset)
         trgs.append(trg)
         labels_trgs.append(label)
-        sample_to_csv(tab, f"data/{idx:04d}.csv")
+        sample_to_csv(tab, f"output/{idx:04d}.csv")
 
     with multiprocessing.Pool() as pool:
         pool.starmap(
@@ -73,7 +73,7 @@ def generate_lime_and_rlime(
 
     # Generate the LIME explanation and save it as an image.
     print("LIME")
-    generate_lime(trg, dataset, black_box, f"data/lime-{idx:04d}.png")
+    generate_lime(trg, dataset, black_box, f"output/lime-{idx:04d}.png")
 
     # Generate the R-LIME explanation and save it as an image.
     print("R-LIME")
@@ -84,7 +84,7 @@ def generate_lime_and_rlime(
             trg,
             dataset,
             black_box,
-            f"data/newlime-{idx:04d}-{int(hyper_param.tau * 100)}.png",
+            f"output/newlime-{idx:04d}-{int(hyper_param.tau * 100)}.png",
             hyper_param,
         )
 
