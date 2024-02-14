@@ -3,9 +3,9 @@
 import numpy as np
 import sklearn
 
-from newlime_types import IntArray
-from newlime_utils import load_dataset, plot_weights
-from sampler import Sampler
+from .newlime_types import IntArray
+from .newlime_utils import load_dataset, plot_weights
+from .sampler import Sampler
 
 
 def main() -> None:

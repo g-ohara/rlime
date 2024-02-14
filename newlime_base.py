@@ -16,8 +16,8 @@ import pandas as pd
 from anchor.anchor_base import AnchorBaseBeam
 from river import compose, linear_model, preprocessing
 
-from newlime_types import IntArray, Rule
-from sampler import Sampler
+from .newlime_types import IntArray, Rule
+from .sampler import Sampler
 
 
 class Arm:

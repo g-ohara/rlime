@@ -5,10 +5,10 @@ This module implements NewLIME explainer for tabular datasets.
 
 from dataclasses import dataclass
 
-import newlime_base
-from newlime_base import Arm, HyperParam
-from newlime_types import Classifier, IntArray, Rule
-from sampler import Sampler
+from . import newlime_base
+from .newlime_base import Arm, HyperParam
+from .newlime_types import Classifier, IntArray, Rule
+from .sampler import Sampler
 
 
 @dataclass
