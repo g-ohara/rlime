@@ -1,30 +1,58 @@
 """This module contains the LIME algorithm"""
 
+import lime
 import numpy as np
 import sklearn
 
-from .newlime_types import IntArray
-from .newlime_utils import load_dataset, plot_weights
-from .sampler import Sampler
+from newlime_types import IntArray
+from newlime_utils import load_dataset
+from sampler import Sampler
 
 
 def main() -> None:
-    """Main function"""
+    """Main function. Test whether weights calculated by this module equal to
+    weights calculated by the original LIME implementation."""
 
     # Load the dataset
     dataset = load_dataset("recidivism", "datasets", balance=True)
 
-    # Get the target
-    trg = dataset.test[0]
+    for trg in dataset.test:
 
-    # Create the sampler
-    black_box = sklearn.ensemble.RandomForestClassifier()
-    black_box.fit(dataset.train, dataset.labels_train)
-    sampler = Sampler(trg, dataset.train, black_box, dataset.categorical_names)
+        # Create the sampler
+        black_box = sklearn.ensemble.RandomForestClassifier()
+        black_box.fit(dataset.train, dataset.labels_train)
+        sampler = Sampler(
+            trg, dataset.train, black_box.predict, dataset.categorical_names
+        )
 
-    # Get the LIME explanation and plot the weights
-    coef = explain(trg, sampler, 100000)
-    plot_weights(coef, dataset.feature_names, img_name="weights.png")
+        num_samples = 10000
+
+        # Get the LIME explanation twice by this module
+        coef1 = np.array(explain(trg, sampler, num_samples))
+        coef2 = np.array(explain(trg, sampler, num_samples))
+        diff_twice = float(np.linalg.norm(coef1 - coef2))
+
+        # Get the LIME explanation by the original LIME implementation
+        lime_explainer = lime.lime_tabular.LimeTabularExplainer(
+            dataset.train,
+            discretize_continuous=False,
+        )
+        lime_exp = lime_explainer.explain_instance(
+            trg,
+            black_box.predict_proba,
+            num_features=15,
+            top_labels=1,
+            num_samples=num_samples,
+        )
+        pred_label = black_box.predict(trg.reshape(1, -1))[0]
+        coef_org = [0.0] * len(dataset.feature_names)
+        for t in lime_exp.local_exp[pred_label]:
+            coef_org[t[0]] = t[1] * (pred_label * 2 - 1)
+        coef_org = coef_org / np.sum(np.abs(coef_org))
+        diff_org = float(np.linalg.norm(coef1 - coef_org))
+
+        # Compare the weights
+        print(f"{diff_twice:.4f} {diff_org:.4f}")
 
 
 def calc_weights(

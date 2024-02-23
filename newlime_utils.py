@@ -15,8 +15,8 @@ import numpy as np
 import sklearn.ensemble
 from anchor import anchor_tabular
 
-from .newlime_tabular import Dataset
-from .newlime_types import IntArray
+from newlime_tabular import Dataset
+from newlime_types import IntArray
 
 
 def load_dataset(
