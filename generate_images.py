@@ -11,7 +11,7 @@ import newlime_tabular
 import newlime_utils
 from newlime_tabular import Dataset
 from newlime_types import Classifier, IntArray
-from newlime_utils import RuleInfo, plot_weights
+from newlime_utils import RuleInfo
 from sampler import Sampler
 
 
@@ -24,6 +24,29 @@ def sample_to_csv(
         writer = csv.writer(f)
         for feature, sample in tab:
             writer.writerow([feature, sample])
+
+
+def save_weights(
+    path: str, weights: list[float], rule_info: RuleInfo | None = None
+) -> None:
+    """Save the weights as a CSV file.
+
+    Parameters
+    ----------
+    weights : list[float]
+        The weights to be saved.
+    path : str
+        The path to the CSV file.
+    rule_info : RuleInfo | None
+        The rule information to be saved.
+    """
+
+    with open(path, "w", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(weights)
+        if rule_info is not None:
+            writer.writerow(rule_info.rule_str)
+            writer.writerow([rule_info.coverage, rule_info.precision])
 
 
 def main() -> None:
@@ -73,7 +96,7 @@ def generate_lime_and_rlime(
 
     # Generate the LIME explanation and save it as an image.
     print("LIME")
-    generate_lime(trg, dataset, black_box, f"output/lime-{idx:04d}.png")
+    generate_lime(trg, dataset, black_box, f"output/lime-{idx:04d}.csv")
 
     # Generate the R-LIME explanation and save it as an image.
     print("R-LIME")
@@ -84,7 +107,7 @@ def generate_lime_and_rlime(
             trg,
             dataset,
             black_box,
-            f"output/newlime-{idx:04d}-{int(hyper_param.tau * 100)}.png",
+            f"output/newlime-{idx:04d}-{int(hyper_param.tau * 100)}.csv",
             hyper_param,
         )
 
@@ -99,12 +122,10 @@ def generate_lime(
 
     # Generate the LIME explanation.
     sampler = Sampler(trg, dataset.train, black_box, dataset.categorical_names)
-    coef = mylime.explain(trg, sampler, 100000)
+    coef, _ = mylime.explain(trg, sampler, 100000)
 
     # Save the LIME explanation as an image.
-    plot_weights(
-        coef, dataset.feature_names, rule_info=None, img_name=img_name
-    )
+    save_weights(img_name, coef)
 
 
 def generate_rlime(
@@ -129,7 +150,7 @@ def generate_rlime(
 
     # Save the R-LIME explanation as an image.
     rule_info = RuleInfo(names, arm.n_rewards / arm.n_samples, arm.coverage)
-    plot_weights(weights, dataset.feature_names, rule_info, img_name)
+    save_weights(img_name, weights, rule_info)
 
 
 if __name__ == "__main__":
