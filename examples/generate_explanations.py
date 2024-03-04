@@ -2,17 +2,18 @@
 
 import csv
 import multiprocessing
+import sys
 
 from sklearn.ensemble import RandomForestClassifier
 
-import mylime
-import newlime_base
-import newlime_tabular
-import newlime_utils
-from newlime_tabular import Dataset
-from newlime_types import Classifier, IntArray
-from newlime_utils import RuleInfo
-from sampler import Sampler
+sys.path.append("./../")
+
+# pylint: disable=import-error, wrong-import-position
+import rlime_lime  # noqa: E402
+from rlime import HyperParam, explain_instance  # noqa: E402
+from rlime_types import Classifier, Dataset, IntArray  # noqa: E402
+from sampler import Sampler  # noqa: E402
+from utils import RuleInfo, get_trg_sample, load_dataset  # noqa: E402
 
 
 def sample_to_csv(
@@ -53,9 +54,7 @@ def main() -> None:
     """The main function of the module."""
 
     # Load the dataset.
-    dataset = newlime_utils.load_dataset(
-        "recidivism", "datasets/", balance=True
-    )
+    dataset = load_dataset("recidivism", "datasets/", balance=True)
 
     # Learn the black box model.
     black_box = RandomForestClassifier(n_estimators=100, n_jobs=1)
@@ -69,7 +68,7 @@ def main() -> None:
 
     # Save the target instances as CSV files.
     for idx in idx_list:
-        trg, label, tab = newlime_utils.get_trg_sample(idx, dataset)
+        trg, label, tab = get_trg_sample(idx, dataset)
         trgs.append(trg)
         labels_trgs.append(label)
         sample_to_csv(tab, f"output/{idx:04d}.csv")
@@ -87,7 +86,7 @@ def main() -> None:
 def generate_lime_and_rlime(
     idx: int,
     trg: IntArray,
-    dataset: newlime_tabular.Dataset,
+    dataset: Dataset,
     black_box: RandomForestClassifier,
 ) -> None:
     """Generate the LIME and R-LIME explanations for the given sample."""
@@ -100,7 +99,7 @@ def generate_lime_and_rlime(
 
     # Generate the R-LIME explanation and save it as an image.
     print("R-LIME")
-    hyper_param = newlime_base.HyperParam()
+    hyper_param = HyperParam()
     for hyper_param.tau in [0.7, 0.8, 0.9]:
         print(f"tau = {hyper_param.tau}")
         generate_rlime(
@@ -122,7 +121,7 @@ def generate_lime(
 
     # Generate the LIME explanation.
     sampler = Sampler(trg, dataset.train, black_box, dataset.categorical_names)
-    coef, _ = mylime.explain(trg, sampler, 100000)
+    coef, _ = rlime_lime.explain(trg, sampler, 100000)
 
     # Save the LIME explanation as an image.
     save_weights(img_name, coef)
@@ -133,14 +132,12 @@ def generate_rlime(
     dataset: Dataset,
     black_box: Classifier,
     img_name: str,
-    hyper_param: newlime_base.HyperParam,
+    hyper_param: HyperParam,
 ) -> None:
     """Generate the R-LIME explanations for the given sample."""
 
     # Generate the R-LIME explanation and standardize its weights.
-    result = newlime_tabular.explain_instance(
-        trg, dataset, black_box, hyper_param
-    )
+    result = explain_instance(trg, dataset, black_box, hyper_param)
     if result is None:
         print("No explanation found.")
         return

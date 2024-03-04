@@ -1,20 +1,14 @@
 """Module for plotting images."""
 
 import csv
-from dataclasses import dataclass
+import sys
 
 import matplotlib.pyplot as plt
 
-from newlime_utils import load_dataset
+sys.path.append("..")
 
-
-@dataclass
-class RuleInfo:
-    """Rule information"""
-
-    rule_str: list[str]
-    precision: float
-    coverage: float
+# pylint: disable=import-error, wrong-import-position
+from utils import RuleInfo, load_dataset  # noqa: E402
 
 
 def main() -> None:
