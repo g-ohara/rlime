@@ -6,11 +6,9 @@ NewLIME.
 import copy
 import random
 import typing
-from dataclasses import dataclass
 
 import anchor
 import anchor.utils
-import matplotlib.pyplot as plt
 import numpy as np
 import sklearn.ensemble
 from anchor import anchor_tabular
@@ -169,92 +167,6 @@ def get_trg_sample(
 
     trg_data.append((dataset.class_target, f"{label_name} ({label})"))
     return trg, label, trg_data
-
-
-@dataclass
-class RuleInfo:
-    """Rule information"""
-
-    rule_str: list[str]
-    precision: float
-    coverage: float
-
-
-def plot_weights(
-    weights: list[float],
-    feature_names: list[str],
-    rule_info: RuleInfo | None = None,
-    img_name: str | None = None,
-) -> None:
-    """Plot the weights of the surrogate model.
-
-    Parameters
-    ----------
-    weights : list[float]
-        The weights of the features
-    feature_names : list[str]
-        The names of the features
-    rule_info : RuleInfo, optional
-        The rule string, accuracy and coverage, by default None
-    img_name : str, optional
-        The name of the image, by default None
-
-    Returns
-    -------
-    None
-    """
-
-    features = feature_names
-    abs_values = [abs(x) for x in weights]
-    _, sorted_features, sorted_values = zip(
-        *sorted(zip(abs_values, features, weights), reverse=False)[-5:]
-    )
-    plt.figure()
-    color = [
-        "#32a852" if sorted_values[i] > 0 else "#cf4529"
-        for i in range(len(sorted_values))
-    ]
-    plt.rc("ytick", labelsize=12)
-    plt.barh(sorted_features, sorted_values, color=color)
-
-    def concat_names(names: list[str]) -> str:
-        """concatenate the names to multiline string such that the string
-        length is less than the specified length"""
-
-        multiline_names = []
-        line: list[str] = []
-        line_len = 0
-        and_len = len(" AND ")
-        max_len = 50
-
-        for name in names:
-            if line_len + and_len + len(name) > max_len and len(line) > 0:
-                multiline_names.append(" AND ".join(line))
-                line = [name]
-                line_len = len(name)
-            else:
-                line.append(name)
-                line_len += len(name) + and_len
-
-        multiline_names.append(" AND ".join(line))
-        return " AND \n".join(multiline_names)
-
-    if rule_info is not None:
-        anchor_str = concat_names(rule_info.rule_str)
-        plt.title(
-            f"{anchor_str}\n"
-            f"with Accuracy {rule_info.precision:.3f} "
-            f"and Coverage {rule_info.coverage:.3f}",
-            fontsize=15,
-        )
-
-    for f, v in zip(sorted_features, sorted_values):
-        plt.text(v, f, round(v, 5), fontsize=12)
-
-    if img_name is not None:
-        plt.savefig(img_name, bbox_inches="tight")
-
-    plt.close()
 
 
 def anchor_original(
