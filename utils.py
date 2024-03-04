@@ -3,18 +3,15 @@ This is a program for user explanation to test improved interpretability of
 NewLIME.
 """
 
-import copy
 import random
 import typing
 
 import anchor
 import anchor.utils
-import numpy as np
 import sklearn.ensemble
 from anchor import anchor_tabular
 
-from newlime_tabular import Dataset
-from newlime_types import IntArray
+from rlime_types import Dataset, IntArray
 
 
 def load_dataset(
@@ -58,75 +55,6 @@ def load_dataset(
 
     if dataset_name != "lending":
         dataset.class_names = class_names[dataset_name]
-
-    return dataset
-
-
-def get_imbalanced_dataset(balanced: Dataset, pos_rate: float) -> Dataset:
-    """Get imbalanced dataset with positive rate pos_rate (0.0 ~ 1.0) from the
-    original dataset
-
-    Parameters
-    ----------
-    dataset : Dataset
-        The dataset to be imbalanced
-    pos_rate : float
-        The positive rate of the imbalanced dataset (0.0 ~ 1.0)
-
-    Returns
-    -------
-    Dataset
-        The imbalanced dataset
-    """
-    dataset = copy.deepcopy(balanced)
-    neg_num = np.sum(dataset.labels == 0)
-    pos_num = int(pos_rate * neg_num / (1 - pos_rate))
-    pos_data_idx = []
-    for i, label in enumerate(dataset.labels):
-        if label == 1:
-            pos_data_idx.append(i)
-    np.random.seed(1024)
-    del_list = np.random.choice(
-        pos_data_idx,
-        len(pos_data_idx) - pos_num,
-        replace=False,
-    )
-
-    del_train_list = []
-    for i, x in enumerate(dataset.train_idx):
-        if x in del_list:
-            del_train_list.append(i)
-
-    del_valid_list = []
-    for i, x in enumerate(dataset.validation_idx):
-        if x in del_list:
-            del_valid_list.append(i)
-
-    del_test_list = []
-    for i, x in enumerate(dataset.test_idx):
-        if x in del_list:
-            del_test_list.append(i)
-
-    dataset.data = np.delete(dataset.data, del_list, axis=0)
-    dataset.labels = np.delete(dataset.labels, del_list, axis=0)
-
-    dataset.train = np.delete(dataset.train, del_train_list, axis=0)
-    dataset.labels_train = dataset.data = np.delete(
-        dataset.labels_train, del_train_list, axis=0
-    )
-    dataset.train_idx = np.delete(dataset.train_idx, del_train_list, axis=0)
-
-    dataset.validation = np.delete(dataset.validation, del_valid_list, axis=0)
-    dataset.labels_validation = np.delete(
-        dataset.labels_validation, del_valid_list, axis=0
-    )
-    dataset.validation_idx = np.delete(
-        dataset.validation_idx, del_valid_list, axis=0
-    )
-
-    dataset.test = np.delete(dataset.test, del_test_list, axis=0)
-    dataset.labels_test = np.delete(dataset.labels_test, del_test_list, axis=0)
-    dataset.test_idx = np.delete(dataset.test_idx, del_test_list, axis=0)
 
     return dataset
 

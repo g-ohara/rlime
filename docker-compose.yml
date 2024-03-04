@@ -1,7 +1,7 @@
 services:
   python:
     image: genjiohara/python
-    container_name: R-LIME_paper-experiments
+    container_name: rlime
     volumes:
       - ./:/root/workspace
       - /tmp/.X11-unix:/tmp/.X11-unix

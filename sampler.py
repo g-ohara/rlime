@@ -3,15 +3,9 @@ multivariate Gaussian distribution. The mean and covariance matrix of the
 distribution are computed from the training data and the given conditions.
 """
 
-from typing import Callable
-
 import numpy as np
-import numpy.typing as npt
 
-IntArray = npt.NDArray[np.int64]
-FloatArray = npt.NDArray[np.float64]
-Rule = tuple[int, ...]
-Classifier = Callable[[IntArray | FloatArray], IntArray]
+from rlime_types import Classifier, FloatArray, IntArray, Rule
 
 
 class Sampler:
