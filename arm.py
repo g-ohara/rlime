@@ -3,8 +3,8 @@
 import pandas as pd
 from river import compose, linear_model, preprocessing
 
-from rlime_types import IntArray, Rule
-from sampler import Sampler
+from .rlime_types import IntArray, Rule
+from .sampler import Sampler
 
 
 class Arm:

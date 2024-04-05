@@ -12,7 +12,7 @@ import anchor.utils
 import sklearn.ensemble
 from anchor import anchor_tabular
 
-from rlime_types import Dataset, IntArray
+from .rlime_types import Dataset, IntArray
 
 
 @dataclass

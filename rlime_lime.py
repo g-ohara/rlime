@@ -6,9 +6,9 @@ import pandas as pd
 import sklearn
 from tqdm import tqdm  # type: ignore
 
-from rlime_types import IntArray
-from sampler import Sampler
-from utils import load_dataset
+from .rlime_types import IntArray
+from .sampler import Sampler
+from .utils import load_dataset
 
 
 def main() -> None:

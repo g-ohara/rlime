@@ -14,9 +14,9 @@ from dataclasses import dataclass
 import numpy as np
 from anchor.anchor_base import AnchorBaseBeam
 
-from arm import Arm
-from rlime_types import Classifier, Dataset, IntArray, Rule
-from sampler import Sampler
+from .arm import Arm
+from .rlime_types import Classifier, Dataset, IntArray, Rule
+from .sampler import Sampler
 
 
 @dataclass

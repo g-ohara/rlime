@@ -5,7 +5,7 @@ distribution are computed from the training data and the given conditions.
 
 import numpy as np
 
-from rlime_types import Classifier, FloatArray, IntArray, Rule
+from .rlime_types import Classifier, FloatArray, IntArray, Rule
 
 
 class Sampler:
