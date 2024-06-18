@@ -1,0 +1,33 @@
+[project]
+name = "rlime"
+version = "0.1.0"
+description = "Implementation of R-LIME, a novel method for interpreting the behavior of ML models."
+dependencies = [
+    "anchor_exp>=0.0.2.0",
+    "pandas>=2.2.2",
+    "river>=0.21.1",
+    "scikit_learn>=1.5.0",
+]
+readme = "README.md"
+requires-python = ">= 3.8"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "pyright>=1.1.367",
+    "black>=24.4.2",
+    "isort>=5.13.2",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rlime"]
+
+[tool.black]
+line-length = 79
