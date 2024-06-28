@@ -1,8 +1,0 @@
-services:
-  rye:
-    image: genjiohara/rye
-    container_name: rlime-pyright
-    volumes:
-      - .:${PWD}
-    working_dir: ${PWD}
-    tty: true
