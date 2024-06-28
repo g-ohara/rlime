@@ -194,9 +194,7 @@ def lucb(cands: list[Arm], hyper_param: HyperParam) -> list[Arm]:
 
 
 def largest_valid_cand(
-    b_best_cands: list[Arm],
-    hyper_param: HyperParam,
-    n_features: int,
+    b_best_cands: list[Arm], hyper_param: HyperParam, n_features: int
 ) -> Arm | None:
     """Search the valid candidate with highest coverage. Return None if no
     valid candidates found.

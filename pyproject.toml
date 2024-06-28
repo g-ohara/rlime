@@ -29,5 +29,16 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel]
 packages = ["src/rlime"]
 
-[tool.black]
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
 line-length = 79
+indent-width = 4
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = true
+line-ending = "lf"

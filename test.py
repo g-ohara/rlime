@@ -34,11 +34,7 @@ def main() -> None:
         test_rlime(trg, dataset, predict, HyperParam(tau=tau / 100))
 
 
-def test_lime(
-    trg: IntArray,
-    dataset: Dataset,
-    black_box: Classifier,
-) -> None:
+def test_lime(trg: IntArray, dataset: Dataset, black_box: Classifier) -> None:
     """Generate the LIME explanation for the given sample."""
 
     print("LIME:")

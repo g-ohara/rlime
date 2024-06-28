@@ -21,11 +21,9 @@ def main() -> None:
         black_box: sklearn.ensemble.RandomForestClassifier,
         num_samples: int,
     ) -> list[float]:
-
         # Get the LIME explanation by the original LIME implementation
         lime_explainer = lime.lime_tabular.LimeTabularExplainer(
-            train_data,
-            discretize_continuous=False,
+            train_data, discretize_continuous=False
         )
         lime_exp = lime_explainer.explain_instance(
             trg,
@@ -49,7 +47,6 @@ def main() -> None:
     my_accs = []
     org_accs = []
     for trg in tqdm(dataset.test[:100]):
-
         # Create the sampler
         black_box = sklearn.ensemble.RandomForestClassifier()
         black_box.fit(dataset.train, dataset.labels_train)
@@ -105,9 +102,7 @@ def calc_weights(
 
 
 def explain(
-    trg: IntArray,
-    sampler: Sampler,
-    num_samples: int,
+    trg: IntArray, sampler: Sampler, num_samples: int
 ) -> tuple[list[float], sklearn.preprocessing.StandardScaler]:
     """Get the LIME explanation for the target"""
 
