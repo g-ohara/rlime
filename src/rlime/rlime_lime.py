@@ -13,7 +13,8 @@ from .utils import load_dataset
 
 def main() -> None:
     """Main function. Test whether weights calculated by this module equal to
-    weights calculated by the original LIME implementation."""
+    weights calculated by the original LIME implementation.
+    """
 
     def original_lime(
         trg: IntArray,
@@ -81,10 +82,8 @@ def main() -> None:
 def calc_weights(
     scaled_samples: IntArray, trg: IntArray, kernel_width: float | None = None
 ) -> list[float]:
+    """Calculate the weights for the samples based on the distance to the target
     """
-    Calculate the weights for the samples based on the distance to the target
-    """
-
     # Calculate the distance between the samples and the target
     distances: list[float] = sklearn.metrics.pairwise_distances(
         scaled_samples, trg.reshape(1, -1)
@@ -105,7 +104,6 @@ def explain(
     trg: IntArray, sampler: Sampler, num_samples: int
 ) -> tuple[list[float], sklearn.preprocessing.StandardScaler]:
     """Get the LIME explanation for the target"""
-
     # Sample and scale the data
     samples, labels = sampler.sample(num_samples)
     scaler = sklearn.preprocessing.StandardScaler().fit(samples)

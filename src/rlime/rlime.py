@@ -23,7 +23,7 @@ from .sampler import Sampler
 class HyperParam:  # pylint: disable=too-many-instance-attributes
     """Hyper parameters for beam search of best anchor
 
-    Attributes
+    Attributes:
     ----------
     tau: float
         The threshold of precision of the rules
@@ -76,7 +76,7 @@ def make_tuples(
     coverage_data: np.ndarray
         The data for calculating coverage of the rules
 
-    Returns
+    Returns:
     -------
     list[Arm]
         The list of the candidate rules
@@ -90,7 +90,7 @@ def make_tuples(
         t: Rule
             The rule
 
-        Returns
+        Returns:
         -------
         list[Rule]
             The list of the rules with all possible predicates added to
@@ -127,12 +127,11 @@ def lucb(cands: list[Arm], hyper_param: HyperParam) -> list[Arm]:
     hyper_param: HyperParam
         The hyper parameters for beam search
 
-    Returns
+    Returns:
     -------
     list[int]
         The list of indexes of the B best arms
     """
-
     n_cands = len(cands)
     means = [0.5] * n_cands
     ub = np.array([1.0] * n_cands)
@@ -155,13 +154,12 @@ def lucb(cands: list[Arm], hyper_param: HyperParam) -> list[Arm]:
         t: int
             The number of samples generated so far
 
-        Returns
+        Returns:
         -------
         tuple[int, int]
             The indexes of the arms with the highest upper bound and the
             lowest lower bound
         """
-
         sorted_means = np.argsort(means)
         beta = AnchorBaseBeam.compute_beta(n_cands, t, hyper_param.delta)
         top_n_means = sorted_means[-top_n:]
@@ -208,7 +206,7 @@ def largest_valid_cand(
     n_features: int
         The number of features
 
-    Returns
+    Returns:
     -------
     Arm
         The rule with the highest coverage of the rules with higher
@@ -268,14 +266,13 @@ def beam_search(sampler: Sampler, hyper_param: HyperParam) -> Arm | None:
     hyper_param: HyperParam
         The hyper parameters for beam search of best anchor
 
-    Returns
+    Returns:
     -------
     Arm | None
         The rule with the highest coverage of the rules with higher
         precision than tau in the B best rules
         (if it does not exist, None)
     """
-
     # Generate initial samples to calculate coverage of the rules
     coverage_data, _ = sampler.sample(hyper_param.coverage_samples_num, ())
     n_features = coverage_data.shape[1]
@@ -331,12 +328,11 @@ def explain_instance(
     hyper_param: HyperParam
         Hyperparameters for NewLIME.
 
-    Returns
+    Returns:
     -------
     tuple[list[str], Arm] | None
         The string representation of the rule and the arm.
     """
-
     # Generate Explanation
     arm: Arm | None
     sampler = Sampler(

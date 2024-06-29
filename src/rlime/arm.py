@@ -10,7 +10,7 @@ from .sampler import Sampler
 class Arm:
     """This is a class for an arm in multi-armed bandit problem.
 
-    Attributes
+    Attributes:
     ----------
     rule: Rule
         The rule under which the perturbed vectors are sampled
@@ -39,7 +39,6 @@ class Arm:
         coverage_data: np.ndarray
             The data for calculating coverage of the rules
         """
-
         self.rule = rule
         self.surrogate_model = Arm.init_surrogate_model()
         self.sampler = sampler
@@ -54,7 +53,7 @@ class Arm:
     def init_surrogate_model() -> compose.Pipeline:
         """Initialize online linear model and returns it
 
-        Returns
+        Returns:
         -------
         Pipeline
             The initialized model
@@ -79,7 +78,7 @@ class Arm:
         samples: np.ndarray
             The perturbed vectors
 
-        Returns
+        Returns:
         -------
         int
             The number of samples covered by the rule
@@ -96,7 +95,6 @@ class Arm:
         n: int
             The number of perturbed vectors sampled
         """
-
         raw_data, psuedo_labels = self.sampler.sample(n, self.rule)
 
         self.n_samples += n

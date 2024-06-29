@@ -36,7 +36,6 @@ class Sampler:
         categorical_names : dict[int, list[str]]
             Dictionary of categorical feature names and possible values.
         """
-
         self.trg = trg
         self.black_box_model = black_box_model
         self.rng = np.random.default_rng()
@@ -58,13 +57,12 @@ class Sampler:
         rule : Rule
             Target rule. The rule is represented as a tuple of feature indices.
 
-        Returns
+        Returns:
         -------
         tuple[np.ndarray, np.ndarray]
             Mean and covariance matrix of conditional multivariate Gaussian
             distribution.
         """
-
         # Get indices of features in the rule and not in the rule
         fix_idx = list(rule)
         var_idx = list(filter(lambda i: i not in rule, range(len(self.trg))))
@@ -104,12 +102,11 @@ class Sampler:
         data : np.ndarray
             Data points to be discretized.
 
-        Returns
+        Returns:
         -------
         np.ndarray
             Discretized data points.
         """
-
         # Round continuous features and clip categorical features
         d_data: IntArray = np.zeros_like(data)
         for f, count in self.category_counts.items():
@@ -130,14 +127,13 @@ class Sampler:
         rule : Rule, optional (default=None)
             Target rule. The rule is represented as a tuple of feature indices.
 
-        Returns
+        Returns:
         -------
         tuple[np.ndarray, np.ndarray]
             The perturbed vectors sampled from distribution and the boolean
             vectors that indicates whether the feature is same as the target
             instance or not.
         """
-
         if rule is None:
             rule = ()
 

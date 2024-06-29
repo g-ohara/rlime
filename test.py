@@ -11,7 +11,6 @@ from src.rlime.utils import get_trg_sample
 
 def main() -> None:
     """The main function of the module."""
-
     # Load the dataset.
     dataset = utils.load_dataset(
         "recidivism", "src/rlime/datasets/", balance=True
@@ -36,7 +35,6 @@ def main() -> None:
 
 def test_lime(trg: IntArray, dataset: Dataset, black_box: Classifier) -> None:
     """Generate the LIME explanation for the given sample."""
-
     print("LIME:")
     sampler = Sampler(trg, dataset.train, black_box, dataset.categorical_names)
     coef, _ = rlime_lime.explain(trg, sampler, 100000)
@@ -50,7 +48,6 @@ def test_rlime(
     hyper_param: HyperParam,
 ) -> None:
     """Generate the R-LIME explanations for the given sample."""
-
     print(f"R-LIME (tau = {hyper_param.tau}):")
     result = explain_instance(trg, dataset, black_box, hyper_param)
     if result is None:
