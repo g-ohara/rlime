@@ -1,5 +1,4 @@
-"""
-This is a program for user explanation to test improved interpretability of
+"""This is a program for user explanation to test improved interpretability of
 NewLIME.
 """
 
@@ -9,8 +8,6 @@ from dataclasses import dataclass
 
 import anchor
 import anchor.utils
-import sklearn.ensemble
-from anchor import anchor_tabular
 
 from .rlime_types import Dataset, IntArray
 
@@ -31,7 +28,6 @@ def load_dataset(
     discretize: bool = True,
 ) -> Dataset:
     """Download balanced and descretized dataset"""
-
     rcdv_categorical_names = {
         0: ["Black", "White"],
         1: ["No", "Yes"],
@@ -80,12 +76,9 @@ def get_categorical_names(
 
 
 def get_trg_sample(
-    index: int | None, bunch: anchor.utils.Bunch
+    index: int | None, dataset: Dataset
 ) -> tuple[IntArray, IntArray, list[tuple[str, str]]]:
     """Get a sample randomly from test set"""
-
-    dataset = typing.cast(Dataset, bunch)
-
     if index is None:
         index = random.randint(0, dataset.test.shape[0] - 1)
 
@@ -105,41 +98,3 @@ def get_trg_sample(
 
     trg_data.append((dataset.class_target, f"{label_name} ({label})"))
     return trg, label, trg_data
-
-
-def anchor_original(
-    trg: IntArray,
-    dataset: Dataset,
-    model: sklearn.ensemble.RandomForestClassifier,
-    threshold: float = 0.80,
-) -> tuple[float, str, float, float]:
-    """Run Anchor and print the rule, precision and coverage on the terminal.
-
-    Parameters
-    ----------
-    trg : np.ndarray
-        The target sample
-    dataset : Dataset
-        The dataset
-    model : sklearn.ensemble.RandomForestClassifier
-        The black box model (random forest)
-    threshold : float, optional
-        The threshold, by default 0.80
-
-    Returns
-    -------
-    tuple[float, str, float, float]
-        The threshold, rule, precision and coverage
-    """
-
-    anchor_explainer = anchor_tabular.AnchorTabularExplainer(
-        dataset.class_names,
-        dataset.feature_names,
-        dataset.train,
-        dataset.categorical_names,
-    )
-    anchor_exp = anchor_explainer.explain_instance(
-        trg, model.predict, threshold
-    )
-    anchor_str = " AND ".join(anchor_exp.names())
-    return threshold, anchor_str, anchor_exp.precision(), anchor_exp.coverage()
