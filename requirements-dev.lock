@@ -6,6 +6,7 @@
 #   features: []
 #   all-features: false
 #   with-sources: false
+#   generate-hashes: false
 
 -e file:.
 anchor-exp==0.0.2.0
@@ -120,7 +121,7 @@ pygments==2.18.0
     # via rich
 pyparsing==3.1.2
     # via matplotlib
-pyright==1.1.367
+pyright==1.1.369
 python-dateutil==2.9.0.post0
     # via matplotlib
     # via pandas
@@ -146,6 +147,10 @@ scipy==1.13.1
     # via river
     # via scikit-image
     # via scikit-learn
+setuptools==70.0.0
+    # via marisa-trie
+    # via spacy
+    # via thinc
 shellingham==1.5.4
     # via typer
 six==1.16.0
@@ -191,7 +196,3 @@ weasel==0.4.1
     # via spacy
 wrapt==1.16.0
     # via smart-open
-setuptools==70.0.0
-    # via marisa-trie
-    # via spacy
-    # via thinc
