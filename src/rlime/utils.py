@@ -5,6 +5,7 @@ NewLIME.
 import random
 import typing
 from dataclasses import dataclass
+from pathlib import Path
 
 import anchor
 import anchor.utils
@@ -22,10 +23,7 @@ class RuleInfo:
 
 
 def load_dataset(
-    dataset_name: str,
-    dataset_folder: str,
-    balance: bool,
-    discretize: bool = True,
+    dataset_name: str, balance: bool, discretize: bool = True
 ) -> Dataset:
     """Download balanced and descretized dataset"""
     rcdv_categorical_names = {
@@ -45,11 +43,12 @@ def load_dataset(
         "adult": ["<=50K", ">50K"],
     }
 
+    parent = Path(__file__).resolve().parent
     dataset = typing.cast(
         Dataset,
         anchor.utils.load_dataset(
             dataset_name=dataset_name,
-            dataset_folder=dataset_folder,
+            dataset_folder=parent.joinpath("datasets"),
             balance=balance,
             discretize=discretize,
         ),
