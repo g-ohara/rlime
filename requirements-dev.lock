@@ -6,7 +6,6 @@
 #   features: []
 #   all-features: false
 #   with-sources: false
-#   generate-hashes: false
 
 -e file:.
 anchor-exp==0.0.2.0
@@ -147,10 +146,6 @@ scipy==1.13.1
     # via river
     # via scikit-image
     # via scikit-learn
-setuptools==70.0.0
-    # via marisa-trie
-    # via spacy
-    # via thinc
 shellingham==1.5.4
     # via typer
 six==1.16.0
@@ -196,3 +191,7 @@ weasel==0.4.1
     # via spacy
 wrapt==1.16.0
     # via smart-open
+setuptools==70.0.0
+    # via marisa-trie
+    # via spacy
+    # via thinc
