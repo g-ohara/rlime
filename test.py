@@ -12,9 +12,7 @@ from src.rlime.utils import get_trg_sample
 def main() -> None:
     """The main function of the module."""
     # Load the dataset.
-    dataset = utils.load_dataset(
-        "recidivism", "src/rlime/datasets/", balance=True
-    )
+    dataset = utils.load_dataset("recidivism", balance=True)
 
     # Learn the black box model.
     black_box = RandomForestClassifier(n_estimators=100, n_jobs=1)
