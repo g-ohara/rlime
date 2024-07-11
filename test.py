@@ -27,8 +27,9 @@ def main() -> None:
     # Test the LIME and R-LIME implementations.
     predict = lambda x: black_box.predict(x).astype(int)
     test_lime(trg, dataset, predict)
-    for tau in [70, 80, 90]:
-        test_rlime(trg, dataset, predict, HyperParam(tau=tau / 100))
+    hyper_param = HyperParam()
+    for hyper_param.tau in [0.70, 0.80, 0.90]:
+        test_rlime(trg, dataset, predict, hyper_param)
 
 
 def test_lime(trg: IntArray, dataset: Dataset, black_box: Classifier) -> None:

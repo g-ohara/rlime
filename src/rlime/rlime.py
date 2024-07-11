@@ -9,7 +9,9 @@ AnchorBaseBeam uses the original model to calculate the precision of the
 rules.
 """
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from anchor.anchor_base import AnchorBaseBeam
@@ -46,15 +48,27 @@ class HyperParam:  # pylint: disable=too-many-instance-attributes
         features)
     """
 
-    tau: float = 0.80
-    delta: float = 0.05
-    epsilon: float = 0.05
-    epsilon_stop: float = 0.05
-    beam_size: int = 10
-    batch_size: int = 10
-    init_sample_num: int = 1000
-    coverage_samples_num: int = 10000
-    max_rule_length: int | None = None
+    tau: float
+    delta: float
+    epsilon: float
+    epsilon_stop: float
+    beam_size: int
+    batch_size: int
+    init_sample_num: int
+    coverage_samples_num: int
+    max_rule_length: int | None
+
+    def __init__(self, param_path: str | None = None) -> None:
+        """Load hyperparameters from a JSON file.
+
+        Parameters
+        ----------
+        param_path: str | None
+            The path of the JSON file. If None, the default path is used.
+        """
+        default_path = Path(__file__).resolve().parent.joinpath("params.json")
+        with open(param_path or default_path) as f:
+            self.__dict__.update(**json.load(f))
 
 
 def make_tuples(

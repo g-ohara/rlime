@@ -1,0 +1,11 @@
+{
+  "tau": 0.80,
+  "delta": 0.05,
+  "epsilon": 0.05,
+  "epsilon_stop": 0.05,
+  "beam_size": 10,
+  "batch_size": 10,
+  "init_sample_num": 1000,
+  "coverage_samples_num": 10000,
+  "max_rule_length": null
+}
