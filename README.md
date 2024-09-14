@@ -7,7 +7,7 @@ Then, it provides contribution of each feature to the prediction and rule that r
 ## Installation
 Install the package from this repo:
 ```sh
-pip install git+https://github.com/g-ohara/rlime.git
+pip install rlime
 ```
 ## Usage
 Example code:
@@ -25,7 +25,8 @@ black_box = RandomForestClassifier(n_jobs=-1)
 black_box.fit(dataset.train, dataset.labels_train)
 
 # Generate explanation
-hyper_param = HyperParam(tau = 0.70)
+hyper_param = HyperParam()
+hyper_param.tau=0.70
 rlime_exp = explain_instance(focal_point, dataset, black_box.predict, hyper_param)
 
 # Print generated explanation if found
