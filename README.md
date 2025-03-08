@@ -7,6 +7,14 @@ Then, it provides contribution of each feature to the prediction and rule that r
 
 [^1]: Ohara, G., Kimura, K., Kudo, M. (2025). R-LIME: Rectangular Constraints and Optimization for Local Interpretable Model-agnostic Explanation Methods. In: Antonacopoulos, A., Chaudhuri, S., Chellappa, R., Liu, CL., Bhattacharya, S., Pal, U. (eds) Pattern Recognition. ICPR 2024. Lecture Notes in Computer Science, vol 15315. Springer, Cham. https://doi.org/10.1007/978-3-031-78354-8_6
 
+### Related repositories
+
+- [g-ohara/rlime-examples](https://github.com/g-ohara/rlime-examples)
+- [g-ohara/rlime-paper](https://github.com/g-ohara/rlime-paper)
+- [g-ohara/rlime-poster](https://github.com/g-ohara/rlime-poster)
+- [g-ohara/rlime-slides](https://github.com/g-ohara/rlime-slides)
+- [g-ohara/rlime-ga](https://github.com/g-ohara/rlime-ga)
+
 ## Installation
 Install the package:
 ```sh
