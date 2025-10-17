@@ -1,12 +1,17 @@
 """Test code for the implementation of R-LIME."""
 
+from logging import getLogger
+
 from sklearn.ensemble import RandomForestClassifier
 
 from src.rlime import rlime_lime, utils
 from src.rlime.rlime import HyperParam, explain_instance
-from src.rlime.rlime_types import Classifier, Dataset, IntArray
+from src.rlime.rlime_types import Classifier, Dataset, FloatArray, IntArray
 from src.rlime.sampler import Sampler
 from src.rlime.utils import get_trg_sample
+
+# Set up the logger.
+logger = getLogger()
 
 
 def main() -> None:
@@ -20,12 +25,14 @@ def main() -> None:
 
     # Get the target instances.
     idx = 0
-    trg, _, _ = get_trg_sample(idx, dataset)  # type: ignore
-    print(f"Target instance: {idx}")
-    print(trg)
+    trg, _, _ = get_trg_sample(idx, dataset)
+    logger.info("Target instance: %d", idx)
+    logger.info(trg)
 
     # Test the LIME and R-LIME implementations.
-    predict = lambda x: black_box.predict(x).astype(int)
+    def predict(x: IntArray | FloatArray) -> IntArray:
+        return black_box.predict(x).astype(int)
+
     test_lime(trg, dataset, predict)
     hyper_param = HyperParam()
     for hyper_param.tau in [0.70, 0.80, 0.90]:
@@ -34,10 +41,10 @@ def main() -> None:
 
 def test_lime(trg: IntArray, dataset: Dataset, black_box: Classifier) -> None:
     """Generate the LIME explanation for the given sample."""
-    print("LIME:")
+    logger.info("LIME:")
     sampler = Sampler(trg, dataset.train, black_box, dataset.categorical_names)
     coef, _ = rlime_lime.explain(trg, sampler, 100000)
-    print(f" Coefficients: {coef}")
+    logger.info(" Coefficients: %f", coef)
 
 
 def test_rlime(
@@ -47,19 +54,19 @@ def test_rlime(
     hyper_param: HyperParam,
 ) -> None:
     """Generate the R-LIME explanations for the given sample."""
-    print(f"R-LIME (tau = {hyper_param.tau}):")
+    logger.info("R-LIME (tau = %f):", hyper_param.tau)
     result = explain_instance(trg, dataset, black_box, hyper_param)
     if result is None:
-        print(" No explanation found.")
+        logger.info(" No explanation found.")
     else:
         names, arm = result
-        weights = list(
+        weights: list[float] = list(
             arm.surrogate_model["LogisticRegression"].weights.values()
         )
         weights = [w / sum(map(abs, weights)) for w in weights]
-        print(f" Rule: {names}")
-        print(f" Precision: {arm.n_rewards / arm.n_samples}")
-        print(f" Coverage: {arm.coverage}")
+        logger.info(" Rule: %s", names)
+        logger.info(" Precision: %f", arm.n_rewards / arm.n_samples)
+        logger.info(" Coverage: %f", arm.coverage)
 
 
 if __name__ == "__main__":

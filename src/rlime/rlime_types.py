@@ -1,7 +1,7 @@
 """This file contains type aliases for the newlime package."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 import numpy.typing as npt
@@ -14,7 +14,7 @@ Classifier = Callable[[IntArray | FloatArray], IntArray]
 
 @dataclass
 class Dataset:  # pylint: disable=too-many-instance-attributes
-    """Dataset class"""
+    """Dataset class."""
 
     data: IntArray
     labels: IntArray

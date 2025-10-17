@@ -1,7 +1,8 @@
-"""This module contains the class for an arm in multi-armed bandit problem"""
+"""The class for an arm in multi-armed bandit problem."""
 
-import pandas as pd
-from river import compose, linear_model, preprocessing
+from pandas import DataFrame, Series
+from river import linear_model, preprocessing
+from river.compose import Pipeline
 
 from .rlime_types import IntArray, Rule
 from .sampler import Sampler
@@ -28,7 +29,7 @@ class Arm:
     def __init__(
         self, rule: Rule, sampler: Sampler, coverage_data: IntArray
     ) -> None:
-        """Initialize the class Arm
+        """Initialize the class Arm.
 
         Parameters
         ----------
@@ -40,7 +41,7 @@ class Arm:
             The data for calculating coverage of the rules
         """
         self.rule = rule
-        self.surrogate_model = Arm.init_surrogate_model()
+        self.surrogate_model: Pipeline = Arm.init_surrogate_model()
         self.sampler = sampler
         self.n_samples = 0
         self.n_rewards = 0
@@ -50,8 +51,8 @@ class Arm:
         self.coverage = covered / coverage_data.shape[0]
 
     @staticmethod
-    def init_surrogate_model() -> compose.Pipeline:
-        """Initialize online linear model and returns it
+    def init_surrogate_model() -> Pipeline:
+        """Initialize online linear model and returns it.
 
         Returns:
         -------
@@ -60,14 +61,13 @@ class Arm:
         """
         preprocessor = preprocessing.StandardScaler()
         model = linear_model.LogisticRegression()
-        pipeline = compose.Pipeline(preprocessor, model)
-        return pipeline
+        return Pipeline(preprocessor, model)
 
     @staticmethod
     def count_covered_samples(
         rule: Rule, trg: IntArray, samples: IntArray
     ) -> int:
-        """Count the number of samples covered by the rule
+        """Count the number of samples covered by the rule.
 
         Parameters
         ----------
@@ -88,7 +88,7 @@ class Arm:
         )
 
     def sample(self, n: int) -> None:
-        """Sample perturbed vectors under the arm and update the arm
+        """Sample perturbed vectors under the arm and update the arm.
 
         Parameters
         ----------
@@ -98,8 +98,8 @@ class Arm:
         raw_data, psuedo_labels = self.sampler.sample(n, self.rule)
 
         self.n_samples += n
-        data_x: pd.DataFrame = pd.DataFrame(raw_data)
-        data_y = pd.Series(psuedo_labels)
+        data_x = DataFrame(raw_data)
+        data_y = Series(psuedo_labels)
         surrogate_pred = self.surrogate_model.predict_many(data_x)
         self.n_rewards += sum((surrogate_pred == data_y).astype(int))
 

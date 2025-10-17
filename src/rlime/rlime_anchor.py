@@ -5,12 +5,14 @@
     AAAI Conference on Artificial Intelligence (AAAI).
 """
 
-from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from anchor.anchor_explanation import AnchorExplanation
 from anchor.anchor_tabular import AnchorTabularExplainer
 
 from .rlime_types import Classifier, Dataset, IntArray
+
+if TYPE_CHECKING:
+    from anchor.anchor_explanation import AnchorExplanation
 
 
 def anchor(
@@ -42,15 +44,17 @@ def anchor(
     )
 
     anchor_exp: AnchorExplanation
-    anchor_exp = anchor_explainer.explain_instance(trg, classifier, threshold)  # type: ignore
+    anchor_exp = anchor_explainer.explain_instance(trg, classifier, threshold)
 
-    rule: list[str] = anchor_exp.names()  # type: ignore
+    rule: list[str] = anchor_exp.names()
     if not isinstance(rule, list):
-        raise TypeError("Rule should be list type")
+        msg = "Rule should be list type."
+        raise TypeError(msg)
 
-    acc = anchor_exp.precision()  # type: ignore
-    cov = anchor_exp.coverage()  # type: ignore
+    acc: float = anchor_exp.precision()
+    cov: float = anchor_exp.coverage()
     if not isinstance(acc, float) or not isinstance(cov, float):
-        raise TypeError("Accuracy and Coverage should be float type")
+        msg = "Accuracy and Coverage should be float type."
+        raise TypeError(msg)
 
     return rule, acc, cov

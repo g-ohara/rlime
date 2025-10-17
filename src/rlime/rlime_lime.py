@@ -1,10 +1,13 @@
-"""This module contains the LIME algorithm"""
+"""This module contains the LIME algorithm."""
 
-import lime
 import numpy as np
 import pandas as pd
 import sklearn
-from tqdm import tqdm  # type: ignore
+from lime.explanation import Explanation
+from lime.lime_tabular import LimeTabularExplainer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
 from .rlime_types import IntArray
 from .sampler import Sampler
@@ -12,21 +15,23 @@ from .utils import load_dataset
 
 
 def main() -> None:
-    """Main function. Test whether weights calculated by this module equal to
-    weights calculated by the original LIME implementation.
+    """Main function.
+
+    Test whether weights calculated by this module equal to weights
+    calculated by the original LIME implementation.
     """
 
     def original_lime(
         trg: IntArray,
         train_data: IntArray,
-        black_box: sklearn.ensemble.RandomForestClassifier,
+        black_box: RandomForestClassifier,
         num_samples: int,
     ) -> list[float]:
         # Get the LIME explanation by the original LIME implementation
-        lime_explainer = lime.lime_tabular.LimeTabularExplainer(
+        lime_explainer = LimeTabularExplainer(
             train_data, discretize_continuous=False
         )
-        lime_exp = lime_explainer.explain_instance(
+        lime_exp: Explanation = lime_explainer.explain_instance(
             trg,
             black_box.predict_proba,
             num_features=15,
@@ -35,12 +40,10 @@ def main() -> None:
         coef_org = [0.0] * len(dataset.feature_names)
         for t in lime_exp.local_exp[1]:
             coef_org[t[0]] = t[1]
-        coef_org = coef_org / np.sum(np.abs(coef_org))
-
-        return coef_org
+        return coef_org / np.sum(np.abs(coef_org))
 
     # Load the dataset
-    dataset = load_dataset("recidivism", "datasets", balance=True)
+    dataset = load_dataset("recidivism", balance=True)
 
     num_samples = 10000
 
@@ -82,8 +85,7 @@ def main() -> None:
 def calc_weights(
     scaled_samples: IntArray, trg: IntArray, kernel_width: float | None = None
 ) -> list[float]:
-    """Calculate the weights for the samples based on the distance to the target
-    """
+    """Calculate the weights for the samples based on the distance to the target"""
     # Calculate the distance between the samples and the target
     distances: list[float] = sklearn.metrics.pairwise_distances(
         scaled_samples, trg.reshape(1, -1)
@@ -102,7 +104,7 @@ def calc_weights(
 
 def explain(
     trg: IntArray, sampler: Sampler, num_samples: int
-) -> tuple[list[float], sklearn.preprocessing.StandardScaler]:
+) -> tuple[list[float], StandardScaler]:
     """Get the LIME explanation for the target"""
     # Sample and scale the data
     samples, labels = sampler.sample(num_samples)
